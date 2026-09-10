@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>OpBuds.Protocol</RootNamespace>
+    <AssemblyName>OpBuds.Protocol</AssemblyName>
+    <Description>Wire protocol for OnePlus / Oppo earbuds (OPO control service). No platform dependencies.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="OpBuds.Protocol.Tests" />
+  </ItemGroup>
+
+</Project>
