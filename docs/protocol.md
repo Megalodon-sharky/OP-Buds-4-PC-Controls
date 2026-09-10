@@ -325,7 +325,8 @@ Reply is `[status][preset]`. Measured by selecting each preset on the phone:
 | Bass | `0x02` |
 | the saved custom profile | `0x04` |
 
-`0x03` is skipped. The Buds Pro 3 map (`bold` at `0x01`, `serenade` at `0x02`,
+`0x03` is skipped **by the phone**, which never selects it. The firmware itself accepts it
+-- see the `0x0406` section under Writing. The Buds Pro 3 map (`bold` at `0x01`, `serenade` at `0x02`,
 `bass` at `0x03`, `dynaudio` at `0x07`) does **not** apply -- as expected, since the
 Buds 4 has three presets where the Pro 3 has five.
 
@@ -562,9 +563,108 @@ the differential test in the next section is the way to settle it.
 * Mid-session disconnect handling works: a real link drop produced a clean message
   and exit code 0, with no traceback. `confirmed`
 
+## Writing: the SET half `confirmed`
+
+Superseded note: until 2026-09-10 this document said no SET had ever been transmitted.
+Tiers A, B and C have now been run against the hardware. What follows is measured.
+
+### Ack semantics -- and why an ack proves less than it looks like it does
+
+A SET is message type `0x04`; the reply is type `0x84` with the status at `payload[0]`.
+
+| status | meaning | evidence |
+|---|---|---|
+| `0x00` | accepted | ubiquitous |
+| `0x01` | rejected | measured twice, on malformed Tier A payloads |
+
+**`0x00` does NOT prove the command took effect.** Three Tier A calls returned `0x00` and
+produced no sound at all. The ack confirms the frame parsed and the arguments were in
+range -- nothing more. Real confirmation is one of:
+
+1. a readback of the corresponding getter returning the expected value, or
+2. an unsolicited `0x05xx` state-change notification carrying the new value.
+
+Prefer 2 where it exists: it is the firmware volunteering that its state actually moved.
+Every codec in `OpBuds.Protocol` should treat a bare ack as "not rejected", never as
+"applied".
+
+### `0x0400` -- find device (Tier A) `confirmed`
+
+Payload is a **count-prefixed id list**, the same shape as the getters:
+
+```
+01 01        ring left only
+01 02        ring right only
+02 01 02     ring both
+```
+
+The tone self-terminates after a few seconds. **There is no stop opcode** -- none of the
+plausible candidates did anything, and the buds simply stop on their own. A UI "Find"
+button is therefore fire-and-forget, and must not present a Stop control it cannot honour.
+Ring the buds only when they are out of the ears: it is loud.
+
+### `0x0404` -- ANC (Tier B) `confirmed`
+
+```
+[count] [id] [valueLo] [valueHi]
+   01    01      xx        xx
+```
+
+**The value is 16-bit little-endian and mirrors the readback mask exactly.** This is the
+single most useful fact in the write half, and it was missed for an entire session because
+every write had been three bytes long -- a 3-byte payload physically cannot express a value
+that lives in the high byte, which is why Adaptive (`0x0800`) looked like a missing feature
+rather than a truncated argument.
+
+```
+01 01 00 08   ->  mask 0x0800   adaptive
+01 01 40 00   ->  mask 0x0040   anc, low
+```
+
+The field accepts two encodings at once, which makes a naive byte sweep look irregular:
+
+* `0x10` / `0x20` / `0x40` / `0x80` pass **straight through** to mask bits `0x0010`..`0x0080`
+  (the ANC levels: high, moderate, low, auto)
+* `0x01` / `0x02` / `0x04` are **convenience selectors** the firmware expands --
+  `0x01` -> `0x0008` off, `0x02` -> `0x0010` anc-at-high, `0x04` -> `0x0100` transparency
+
+All seven states round-trip: off, anc high/moderate/low/auto, transparency, adaptive.
+**Always emit the explicit 16-bit form.** It is unambiguous and it is the only form that
+can reach adaptive.
+
+### `0x0406` -- EQ preset (Tier C) `confirmed`
+
+Payload is one bare byte. Reply is `0x0684` status `0x00`, followed by a `0x0504`
+notification carrying the new preset.
+
+**The setter performs no range validation whatsoever.** Every value `0x00`-`0x07` was
+accepted: OK ack, genuine state-change notification, and a readback mirroring the value:
+
+```
+tx  aa 08 0000 06 04 .. 01 00  07
+rx  aa 08 0000 06 84 00 01 00  00     ack, accepted
+rx  aa 08 0000 04 05 FF 01 00  07     notify: preset is now 0x07
+```
+
+This refutes an earlier claim in this document that `0x03` is "skipped by the hardware".
+The **phone** never sends `0x03`; the **firmware** accepts it happily. Storage and
+notification are proved for all eight values. Whether `0x03`/`0x05`/`0x06`/`0x07` map to a
+real DSP curve is **unknown** -- audible effect was not tested.
+
+Consequence for the app: **validate preset ids client-side.** The device will not do it for
+you, and a stored out-of-range preset may leave the phone's own UI showing no selection.
+
+### Safety rules that stay in force
+
+* The `0x04xx` space is **never** fuzzed. Only ids on an explicit allowlist are transmitted.
+  An unknown setter could be factory-reset or DFU entry.
+* A full read-only snapshot is taken before the first write of a session and restored in a
+  `finally` block, including on Ctrl+C.
+* Touch config is written back **verbatim** from the bytes read, never reconstructed.
+* Firmware OTA is permanently out of scope.
+
 ### Still never attempted
 
-**No SET has ever been transmitted to this hardware.** Everything above is read-only. The
-entire write half of the protocol -- ANC set, EQ set, custom EQ upload, touch remapping --
-is unverified, and its byte space is separate from the readback space, so none of it can
-be inferred from what is confirmed above.
+Custom EQ upload (`0x0422`?), touch remapping, and misc-config writes. The custom EQ and
+touch payloads are both fully decoded on the read side, so the remaining unknown is the
+setter command id and whether the write echoes the read layout.

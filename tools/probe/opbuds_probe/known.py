@@ -190,10 +190,10 @@ SET_TIERS = {
 
 # --- Feature encodings ----------------------------------------------------
 # Readback values below were MEASURED on a real Buds 4 by changing each setting
-# from the phone and reading the result back. The SET values are still inherited
-# from the Buds Pro 3 and remain unverified: no write has ever been transmitted
-# to this hardware. Set and readback occupy different numeric spaces, so one
-# cannot be derived from the other.
+# from the phone and reading the result back. The SET values below are no longer
+# inherited guesses: Tier A/B/C wrote to this hardware on 2026-09-10 and every
+# value marked CONFIRMED was measured by writing it and reading the result back.
+# Set and readback still occupy different numeric spaces -- see anc_set_payload.
 
 #: CONFIRMED by writing every byte 0x01..0x20 and reading the mode back.
 #: The field is a bitmask with a priority order, not an enum:
@@ -203,8 +203,9 @@ SET_TIERS = {
 #: mask: set 0x10 -> mask 0x0010, set 0x20 -> mask 0x0020.
 ANC_MODE_SET = {"off": 0x01, "anc": 0x02, "transparency": 0x04}
 
-#: CONFIRMED for high and moderate; low and auto follow the same pattern but
-#: were not written. Combine with a mode bit, e.g. anc+high = 0x02 | 0x10.
+#: CONFIRMED for high, moderate and auto by writing the byte and reading back;
+#: low was confirmed from the readback side when chosen on the phone. Combine
+#: with a mode bit, e.g. anc+high = 0x02 | 0x10.
 ANC_LEVEL_MASK_SET = {"high": 0x10, "moderate": 0x20, "low": 0x40, "auto": 0x80}
 
 #: CONFIRMED on a Buds 4, except where noted. Established both by cycling the
@@ -250,16 +251,32 @@ ANC_MASK_TRANSPARENCY = 0x0100
 ANC_MASK_ADAPTIVE = 0x0800
 
 #: All seven confirmed by writing the 16-bit form and reading the mode back.
-#: Note that "auto" (0x0080) is reachable over the protocol but does not appear
-#: in the phone's own UI -- a state this app can offer that the official one
-#: cannot.
+#: "auto" (0x0080) IS present in the phone's own level list -- an earlier
+#: revision claimed otherwise, having missed it in a ~5 s watch poll cycle.
+#: Absence from a poll is not absence from the device.
 ANC_STATES_CONFIRMED = (ANC_MASK_OFF, ANC_MASK_HIGH, ANC_MASK_MODERATE,
                         ANC_MASK_LOW, ANC_MASK_AUTO, ANC_MASK_TRANSPARENCY,
                         ANC_MASK_ADAPTIVE)
 
 #: CONFIRMED. Measured by selecting each preset on the phone and reading 0x010F.
-#: 0x03 is skipped by the hardware. 0x04 selects the saved custom profile.
+#: 0x04 selects the saved custom profile.
+#:
+#: RETRACTION: an earlier revision said "0x03 is skipped by the hardware".
+#: That was inferred from the phone never emitting 0x03, and it is wrong.
+#: Tier C wrote 0x00-0x07 to EQ_PRESET_SET and the firmware accepted every
+#: single one: set-ack status 0x00, a genuine 0x0504 state-change
+#: notification, and a readback mirroring the value exactly. The setter
+#: performs NO range validation. See EQ_PRESETS_UNVALIDATED below.
 EQ_PRESETS_BUDS4 = {0x00: "balanced", 0x01: "serenade", 0x02: "bass", 0x04: "custom"}
+
+#: CONFIRMED (Tier C, 2026-09-10): EQ_PRESET_SET stores and echoes any byte in
+#: 0x00-0x07 without complaint. Whether 0x03/0x05/0x06/0x07 map to a real DSP
+#: curve is UNKNOWN -- storage and notification were proved, audible effect was
+#: not. Callers MUST validate against EQ_PRESETS_BUDS4 before transmitting; the
+#: device will not reject a bad value and the phone UI may then show no
+#: selection at all.
+EQ_PRESETS_UNVALIDATED = True
+EQ_PRESET_ACCEPTED_RANGE = range(0x00, 0x08)
 
 #: Kept for the Buds Pro 3 regression profile. Does NOT apply to the Buds 4.
 EQ_PRESETS_PRO3 = {0x00: "balanced", 0x01: "bold", 0x02: "serenade", 0x03: "bass", 0x07: "dynaudio"}
