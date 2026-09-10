@@ -216,9 +216,8 @@ ANC_READBACK_MASK = {
     0x0020: "anc_moderate",  # confirmed: reached by writing set byte 0x20
     0x0040: "anc_low",       # confirmed: predicted from the level pattern, then
                              # observed when the level was chosen on the phone
-    0x0080: "anc_auto",      # confirmed by writing set byte 0x80. NOT offered by
-                             # the phone UI, but the hardware accepts and reports
-                             # it -- distinct from adaptive
+    0x0080: "anc_auto",      # confirmed by writing set byte 0x80, and present in
+                             # the phone's own level list. Distinct from adaptive
     0x0100: "transparency",  # confirmed both ways
     0x0800: "adaptive",      # confirmed: needs the 16-bit set form 01 01 00 08
 }
