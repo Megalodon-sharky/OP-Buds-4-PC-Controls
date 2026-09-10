@@ -214,21 +214,49 @@ ANC_READBACK_MASK = {
     0x0010: "anc_high",      # confirmed: the phone's "Noise Cancellation"
                              # selects ANC at high level; set 0x10 reaches it
     0x0020: "anc_moderate",  # confirmed: reached by writing set byte 0x20
+    0x0040: "anc_low",       # confirmed: predicted from the level pattern, then
+                             # observed when the level was chosen on the phone
+    0x0080: "anc_auto",      # confirmed by writing set byte 0x80. NOT offered by
+                             # the phone UI, but the hardware accepts and reports
+                             # it -- distinct from adaptive
     0x0100: "transparency",  # confirmed both ways
-    0x0800: "adaptive",      # confirmed by phone toggle ONLY -- no set byte in
-                             # 0x01..0x20 reaches it; see ANC_ADAPTIVE_UNSOLVED
-    0x0040: "anc_low",       # assumed: set 0x40, follows the level pattern
-    0x0080: "anc_auto",      # assumed: set 0x80, follows the level pattern
+    0x0800: "adaptive",      # confirmed: needs the 16-bit set form 01 01 00 08
 }
 
-#: Adaptive reads back as 0x0800 but no single set byte in 0x01..0x20 produces
-#: it, and toggling it on the phone moved NOTHING except 0x010C -- so it is not
-#: carried by some other command. The untested hypothesis is that the set value
-#: is 16-bit little-endian and mirrors the readback mask, making adaptive the
-#: 4-byte payload 01 01 00 08 rather than a 3-byte one. One write would settle
-#: it. Not attempted: each ANC write is audible and physically unpleasant in the
-#: ear, so this is gated on explicit consent rather than swept.
-ANC_ADAPTIVE_UNSOLVED = True
+#: CONFIRMED: the ANC set VALUE IS 16-BIT LITTLE-ENDIAN and mirrors the readback
+#: mask. Payload is [count][id][valueLo][valueHi]. Adaptive was unreachable for
+#: an entire session only because every write had been 3 bytes, which cannot
+#: express a value living in the high byte.
+#:
+#: The field carries two encodings at once, which is why a byte sweep looks
+#: irregular. Low-byte values 0x10/0x20/0x40/0x80 pass straight through to mask
+#: bits 0x0010..0x0080. But 0x01/0x02/0x04 are NOT mask bits -- they are
+#: convenience mode selectors the firmware expands:
+#:     0x01 -> 0x0008 (off)   0x02 -> 0x0010 (anc, defaults to high)
+#:     0x04 -> 0x0100 (transparency)
+#: Prefer the explicit 16-bit form everywhere; it is unambiguous.
+def anc_set_payload(mask: int, count: int = 0x01, field: int = 0x01) -> bytes:
+    """Build an ANC_SET payload for a readback mask, e.g. ANC_MASK_ADAPTIVE."""
+    if mask not in ANC_READBACK_MASK:
+        raise ValueError(f"not a known ANC mask: 0x{mask:04X}")
+    return bytes((count, field, mask & 0xFF, (mask >> 8) & 0xFF))
+
+
+ANC_MASK_OFF = 0x0008
+ANC_MASK_HIGH = 0x0010
+ANC_MASK_MODERATE = 0x0020
+ANC_MASK_LOW = 0x0040
+ANC_MASK_AUTO = 0x0080
+ANC_MASK_TRANSPARENCY = 0x0100
+ANC_MASK_ADAPTIVE = 0x0800
+
+#: All seven confirmed by writing the 16-bit form and reading the mode back.
+#: Note that "auto" (0x0080) is reachable over the protocol but does not appear
+#: in the phone's own UI -- a state this app can offer that the official one
+#: cannot.
+ANC_STATES_CONFIRMED = (ANC_MASK_OFF, ANC_MASK_HIGH, ANC_MASK_MODERATE,
+                        ANC_MASK_LOW, ANC_MASK_AUTO, ANC_MASK_TRANSPARENCY,
+                        ANC_MASK_ADAPTIVE)
 
 #: CONFIRMED. Measured by selecting each preset on the phone and reading 0x010F.
 #: 0x03 is skipped by the hardware. 0x04 selects the saved custom profile.
