@@ -308,11 +308,33 @@ MISC_IDS_MEASURED = (0x02, 0x04, 0x05, 0x06, 0x0B, 0x0C, 0x0D, 0x11, 0x12,
 MISC_FEATURES_GADGETBRIDGE = {"ldac": 0x01, "game_mode": 0x02,
                               "multipoint": 0x03, "find_phone": 0x04}
 
-#: The supported-feature list is DYNAMIC. Features 0x1D and 0x1E vanished from
-#: the reply mid-session while BassWave itself stayed fully readable and usable
-#: via 0x0124. So an id's absence means "not currently applicable", NOT "not
-#: supported by this model". Anything built on this must re-read, never cache.
-MISC_LIST_IS_DYNAMIC = True
+#: REFUTED 2026-09-10. An earlier revision here claimed the supported-feature
+#: list was DYNAMIC, because 0x1D and 0x1E "vanished" mid-session while BassWave
+#: stayed fully functional. They never vanished. The 0x010D reply is capped at
+#: 32 payload bytes -- exactly 15 [id][value] pairs -- and entries come back in
+#: ascending id order, so a request listing more than 15 supported ids silently
+#: loses the highest ones off the end.
+#:
+#: The reply is not merely truncated, it is MISLEADING: the count field reports
+#: the truncated count as though it were the real one, so a caller that trusts
+#: it sees a smaller, entirely plausible feature list with no error anywhere.
+#: Requesting only (0x1D, 0x1E) returns `00 02 1d 01 1e 01` -- both supported,
+#: both enabled, exactly as they always were.
+#:
+#: The list IS static. Page requests at MISC_MAX_IDS_PER_REPLY and it is safe to
+#: cache for the lifetime of a connection.
+MISC_LIST_IS_DYNAMIC = False
+
+#: CONFIRMED: a 16-id request returned 15 entries in a payload of exactly 0x20
+#: bytes. Never send more ids than this in one 0x010D request.
+MISC_MAX_IDS_PER_REPLY = 15
+MISC_REPLY_PAYLOAD_CAP = 32
+
+
+def misc_id_pages(ids=MISC_IDS_MEASURED, per_page: int = MISC_MAX_IDS_PER_REPLY):
+    """Split misc ids into requests small enough to survive the 32-byte cap."""
+    ids = tuple(ids)
+    return [ids[i:i + per_page] for i in range(0, len(ids), per_page)]
 
 
 # --- Notifications ---------------------------------------------------------

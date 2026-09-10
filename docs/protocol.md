@@ -248,28 +248,50 @@ Naming the remaining sixteen is a pure differential exercise -- see `probe watch
 that toggling hi-res, dual connection and 3D Audio on the phone moved **none** of them, so
 those three settings do not live here.
 
-### The capability list is DYNAMIC `confirmed`
+### The 32-byte reply cap -- and the "dynamic capability list" that never existed `confirmed`
 
-Mid-session the reply dropped from seventeen features to fifteen: **`0x1D` and `0x1E`
-disappeared entirely** -- not set to zero, absent from the reply. Everything else stayed
-byte-identical.
+**This section previously claimed the capability list was dynamic. That was wrong, and the
+error was mine, not the hardware's.**
 
-`0x1D` is BassWave, and BassWave remained **fully functional throughout**: `0x0124` kept
-returning `00 fb 05 05`, and the setting was still usable from the phone.
+The observation was real: a reply that had listed seventeen features started listing
+fifteen, with `0x1D` and `0x1E` absent entirely -- not zeroed, gone -- while BassWave
+(`0x1D`) stayed fully functional via `0x0124` and remained visible in the phone's own UI.
+Four explanations were tested and refuted in turn: LHDC gating, active-playback gating,
+the existence of a custom EQ profile (deleted; no change), and EQ preset state (all four
+presets byte-identical).
 
-So an id's absence means **"not currently applicable"**, not "unsupported by this model".
-Two explanations were tested and both failed:
+The actual cause is much duller. **`0x010D` caps its reply at 32 payload bytes -- exactly
+fifteen `[id][value]` pairs -- and returns entries in ascending id order.** Every request
+that "lost" `0x1D`/`0x1E` had asked for all seventeen ids at once, so the two highest fell
+off the end. The one request that returned them had asked only for the `0x11`-`0x20`
+range.
 
-* *LHDC gating* -- refuted; hi-res was on and BassWave worked.
-* *Active playback gating* -- refuted; audio was paused and the ids did not return.
+Proved directly:
 
-The only correlate that persists is that a custom EQ profile now exists where none did
-before. Unconfirmed. `unknown`
+```
+tx 0x010D  02 1d 1e                     rx  00 02  1d 01  1e 01        both supported, both on
+tx 0x010D  0c <12 ids>                  rx  n=0x0b, payload 24 bytes    all fit
+tx 0x010D  10 <16 ids>                  rx  n=0x0f, payload 0x20 bytes  truncated
+```
 
-**Design consequence:** any `FeatureSet` must be re-read on state change and on reconnect,
-never cached at connect, or the UI will show controls that no longer exist and hide ones
-that do. The count-prefixed getter makes the whole list one round trip, so re-reading is
-nearly free.
+**The failure mode is worse than plain truncation: the reply lies.** The count field
+reports the *truncated* count as though it were the true one, and there is no error status,
+no flag, and no gap in the data. A caller that trusts the reply sees a smaller but entirely
+plausible feature list and has no way to detect the loss. This is the most dangerous
+protocol behaviour found so far, precisely because it looks like success.
+
+The cap is specific to this handler, not global -- `0x011F` returns a 299-byte payload
+happily.
+
+**Design consequence (reversed):** the feature list **is static** and safe to cache for the
+lifetime of a connection. What the client must do instead is **page its requests at fifteen
+ids** and never assume one round trip covers the space. `known.misc_id_pages()` does this.
+
+**Method note worth keeping.** Six hypotheses were tested against this before the right one
+landed, and every one of them was about the *device* changing state. None were about the
+*request* being malformed. The reply was self-consistent, plausible and wrong, which is
+exactly the shape of bug that survives a long time. When a getter's answer changes, suspect
+the question before the device.
 
 ### 3D Audio is not in this protocol `refuted`
 
@@ -558,7 +580,7 @@ the differential test in the next section is the way to settle it.
 * BassWave field order settled differentially. `confirmed`
 * There are **three** notification families, not one. `confirmed`
 * Topic `0xF4` carries JSON telemetry, with explicit `"earside"` labelling. `confirmed`
-* The supported-feature list is dynamic. `confirmed`
+* The supported-feature list is dynamic. `REFUTED` -- it is static; `0x010D` silently truncates its reply at 32 payload bytes (15 entries) and misreports the count. Page requests at 15 ids.
 * 3D Audio is phone-side and has no bud-side command. `refuted`
 * Mid-session disconnect handling works: a real link drop produced a clean message
   and exit code 0, with no traceback. `confirmed`
