@@ -147,40 +147,91 @@ def tier_a_find_device(session: Session, log: ProtocolLog) -> dict:
     return results
 
 
-def tier_b_anc(session: Session, log: ProtocolLog) -> dict:
-    """Derive the Buds 4 ANC readback mask by setting each mode and re-reading.
+#: ANC set bytes to sweep in Tier B. 0x01..0x08 mapped off/NC/transparency and
+#: showed the field is a bitmask where "off" wins any conflict. Adaptive reads
+#: back as 0x0800 and is NOT reachable in that range, so the sweep extends to
+#: 0x20 to find it. Values are parameters to an allowlisted setter, not command
+#: ids, and the device clamps unrecognised ones to "off" rather than misbehaving.
+ANC_SET_SWEEP = range(0x01, 0x21)
 
-    This is the measurement that resolves the documented disagreement between
-    the Buds Pro 3 and Gadgetbridge encodings.
+
+def _anc_mask(payload: bytes) -> int | None:
+    """Mask from a confirmed ANC reply ``[status][count][id][maskLo][maskHi]``."""
+    if len(payload) < 5 or payload[0] != 0x00:
+        return None
+    return payload[3] | (payload[4] << 8)
+
+
+def tier_b_anc(session: Session, log: ProtocolLog) -> dict:
+    """Map ANC *set* bytes onto the confirmed readback masks.
+
+    The readback masks are already measured (off 0x0008, NC 0x0010,
+    transparency 0x0100, adaptive 0x0800). What is still unknown is which byte
+    to WRITE to reach each of them -- set and readback occupy different numeric
+    spaces, so one cannot be derived from the other.
+
+    Two deliberate choices:
+
+    * The sweep runs 0x01..0x08 rather than the three Buds Pro 3 values, because
+      those three cannot reach adaptive, which this hardware has.
+    * Restore replays whichever set byte reproduced the ORIGINAL mask, learned
+      during the sweep. Restoring to a hardcoded "off" would silently leave the
+      earbuds in a mode the user never chose.
+
+    An ack of 0x00 does NOT prove the mode changed -- Tier A returned OK for
+    three writes that did nothing at all. Every step is verified by reading the
+    mode back.
     """
-    print("\n  Tier B -- ANC mode map (audible, restored afterwards)")
+    print("\n  Tier B -- ANC set-byte map (audible, restored afterwards)")
     print("  " + "-" * 62)
     original = session.request(known.ANC_GET, bytes((0x01, 0x01)))
     if original is None:
         print("  cannot read current ANC state -- aborting tier B rather than")
         print("  changing a setting we would not be able to put back.")
         return {"error": "no baseline"}
-    print(f"  baseline: {original.payload.hex(' ')}")
+    baseline_mask = _anc_mask(original.payload)
+    baseline_name = known.ANC_READBACK_MASK.get(baseline_mask, "unrecognised")
+    print(f"  baseline: {original.payload.hex(' ')}  "
+          f"mask=0x{baseline_mask:04X} ({baseline_name})")
 
     observed: dict[str, dict] = {}
+    restore_byte: int | None = None
     try:
-        for name, value in known.ANC_MODE_SET.items():
+        for value in ANC_SET_SWEEP:
             ack = session.send_set(known.ANC_SET, bytes((0x01, 0x01, value)))
             time.sleep(1.0)
             readback = session.request(known.ANC_GET, bytes((0x01, 0x01)))
+            mask = _anc_mask(readback.payload) if readback else None
+            name = known.ANC_READBACK_MASK.get(mask) if mask is not None else None
             entry = {
                 "set_byte": f"0x{value:02X}",
                 "ack": "timeout" if ack is None else ("ok" if ack.ok else f"status 0x{ack.status:02X}"),
-                "readback": readback.payload.hex() if readback else "timeout",
-                "interpreted": _anc_mode_from_reply(readback.payload) if readback else None,
+                "mask": f"0x{mask:04X}" if mask is not None else None,
+                "mode": name,
             }
-            observed[name] = entry
-            print(f"  set {name:<13} -> {entry['readback']}  ({entry['interpreted'] or 'unrecognised mask'})")
-            log.probe("set", known.ANC_SET, entry["ack"], mode=name, readback=entry["readback"])
+            observed[f"0x{value:02X}"] = entry
+            verdict = "no change / rejected" if entry["ack"] != "ok" else (
+                name or (f"unknown mask {entry['mask']}" if mask is not None else "unreadable"))
+            print(f"  set 0x{value:02X}  ack={entry['ack']:<12} mask={entry['mask'] or '--':<8} {verdict}")
+            log.probe("set", known.ANC_SET, entry["ack"], set_byte=value,
+                      mask=entry["mask"], mode=name)
+            if mask is not None and mask == baseline_mask and restore_byte is None:
+                restore_byte = value
             time.sleep(1.2)
     finally:
-        session.send_set(known.ANC_SET, bytes((0x01, 0x01, known.ANC_MODE_SET["off"])))
-        print("  restored ANC to off")
+        if restore_byte is not None:
+            session.send_set(known.ANC_SET, bytes((0x01, 0x01, restore_byte)))
+            time.sleep(0.8)
+            check = session.request(known.ANC_GET, bytes((0x01, 0x01)))
+            got = _anc_mask(check.payload) if check else None
+            ok = got == baseline_mask
+            print(f"  restored ANC to 0x{restore_byte:02X} -> mask "
+                  f"0x{got:04X} ({'matches baseline' if ok else 'DOES NOT MATCH'})"
+                  if got is not None else "  restore readback failed")
+        else:
+            print(f"  *** COULD NOT RESTORE: no set byte reproduced the original mask "
+                  f"0x{baseline_mask:04X} ({baseline_name}). ***")
+            print("  Set the ANC mode from your phone to put it back.")
     return observed
 
 

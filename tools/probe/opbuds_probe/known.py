@@ -195,23 +195,40 @@ SET_TIERS = {
 # to this hardware. Set and readback occupy different numeric spaces, so one
 # cannot be derived from the other.
 
-#: ASSUMED-pro3. The byte written in an ANC_SET payload. Untested.
+#: CONFIRMED by writing every byte 0x01..0x20 and reading the mode back.
+#: The field is a bitmask with a priority order, not an enum:
+#:   bit 0x01 (off) wins over everything -- every odd value read back as off
+#:   bit 0x04 (transparency) beats bit 0x02 (anc)
+#: The upper nibble is the LEVEL, and it maps straight through to the readback
+#: mask: set 0x10 -> mask 0x0010, set 0x20 -> mask 0x0020.
 ANC_MODE_SET = {"off": 0x01, "anc": 0x02, "transparency": 0x04}
 
-#: ASSUMED-pro3. Untested.
+#: CONFIRMED for high and moderate; low and auto follow the same pattern but
+#: were not written. Combine with a mode bit, e.g. anc+high = 0x02 | 0x10.
 ANC_LEVEL_MASK_SET = {"high": 0x10, "moderate": 0x20, "low": 0x40, "auto": 0x80}
 
-#: CONFIRMED on a Buds 4, except where noted. Cycling the phone's ANC selector
-#: through every mode while polling 0x010C produced exactly these values.
+#: CONFIRMED on a Buds 4, except where noted. Established both by cycling the
+#: phone's ANC selector and by writing set bytes and reading the result back.
 ANC_READBACK_MASK = {
-    0x0008: "off",                 # confirmed
-    0x0010: "noise_cancellation",  # confirmed (Pro 3 called this "high")
-    0x0100: "transparency",        # confirmed
-    0x0800: "adaptive",            # confirmed
-    0x0020: "moderate",            # unverified: seen only as an Auto sub-level
-    0x0040: "low",                 # assumed-pro3, never observed here
-    0x0080: "auto",                # assumed-pro3, never observed here
+    0x0008: "off",           # confirmed both ways
+    0x0010: "anc_high",      # confirmed: the phone's "Noise Cancellation"
+                             # selects ANC at high level; set 0x10 reaches it
+    0x0020: "anc_moderate",  # confirmed: reached by writing set byte 0x20
+    0x0100: "transparency",  # confirmed both ways
+    0x0800: "adaptive",      # confirmed by phone toggle ONLY -- no set byte in
+                             # 0x01..0x20 reaches it; see ANC_ADAPTIVE_UNSOLVED
+    0x0040: "anc_low",       # assumed: set 0x40, follows the level pattern
+    0x0080: "anc_auto",      # assumed: set 0x80, follows the level pattern
 }
+
+#: Adaptive reads back as 0x0800 but no single set byte in 0x01..0x20 produces
+#: it, and toggling it on the phone moved NOTHING except 0x010C -- so it is not
+#: carried by some other command. The untested hypothesis is that the set value
+#: is 16-bit little-endian and mirrors the readback mask, making adaptive the
+#: 4-byte payload 01 01 00 08 rather than a 3-byte one. One write would settle
+#: it. Not attempted: each ANC write is audible and physically unpleasant in the
+#: ear, so this is gated on explicit consent rather than swept.
+ANC_ADAPTIVE_UNSOLVED = True
 
 #: CONFIRMED. Measured by selecting each preset on the phone and reading 0x010F.
 #: 0x03 is skipped by the hardware. 0x04 selects the saved custom profile.
