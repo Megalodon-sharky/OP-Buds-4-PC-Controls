@@ -1,0 +1,24 @@
+# Captures contain raw protocol traces from a specific pair of earbuds.
+# Keep the folder, not its contents.
+captures/*
+!captures/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+artifacts/
+
+# Editors / OS
+.idea/
+.vscode/
+Thumbs.db
+desktop.ini
