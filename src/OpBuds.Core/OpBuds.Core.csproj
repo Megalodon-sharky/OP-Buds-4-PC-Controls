@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <RootNamespace>OpBuds.Core</RootNamespace>
+    <AssemblyName>OpBuds.Core</AssemblyName>
+    <Description>Transport and session layer for the OPO earbud control protocol.</Description>
+  </PropertyGroup>
+
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpBuds.Protocol\OpBuds.Protocol.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="OpBuds.Core.Tests" />
+  </ItemGroup>
+
+</Project>
