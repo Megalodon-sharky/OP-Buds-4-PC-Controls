@@ -188,27 +188,40 @@ SET_TIERS = {
 }
 
 
-# --- Feature encodings (all ASSUMED from Buds Pro 3 until measured) --------
+# --- Feature encodings ----------------------------------------------------
+# Readback values below were MEASURED on a real Buds 4 by changing each setting
+# from the phone and reading the result back. The SET values are still inherited
+# from the Buds Pro 3 and remain unverified: no write has ever been transmitted
+# to this hardware. Set and readback occupy different numeric spaces, so one
+# cannot be derived from the other.
 
+#: ASSUMED-pro3. The byte written in an ANC_SET payload. Untested.
 ANC_MODE_SET = {"off": 0x01, "anc": 0x02, "transparency": 0x04}
 
+#: ASSUMED-pro3. Untested.
 ANC_LEVEL_MASK_SET = {"high": 0x10, "moderate": 0x20, "low": 0x40, "auto": 0x80}
 
-#: Readback masks occupy a different numeric space from the set values, and the
-#: Buds Pro 3 and Gadgetbridge already disagree here. Measured in Tier B.
+#: CONFIRMED on a Buds 4, except where noted. Cycling the phone's ANC selector
+#: through every mode while polling 0x010C produced exactly these values.
 ANC_READBACK_MASK = {
-    0x0008: "off",
-    0x0100: "transparency",
-    0x0010: "high",
-    0x0020: "moderate",
-    0x0040: "low",
-    0x0080: "auto",
+    0x0008: "off",                 # confirmed
+    0x0010: "noise_cancellation",  # confirmed (Pro 3 called this "high")
+    0x0100: "transparency",        # confirmed
+    0x0800: "adaptive",            # confirmed
+    0x0020: "moderate",            # unverified: seen only as an Auto sub-level
+    0x0040: "low",                 # assumed-pro3, never observed here
+    0x0080: "auto",                # assumed-pro3, never observed here
 }
 
-#: Buds Pro 3 has five presets; the Buds 4 has three (Balanced, Serenade, Bass),
-#: so this map is expected to be wrong. Measured in Tier C.
+#: CONFIRMED. Measured by selecting each preset on the phone and reading 0x010F.
+#: 0x03 is skipped by the hardware. 0x04 selects the saved custom profile.
+EQ_PRESETS_BUDS4 = {0x00: "balanced", 0x01: "serenade", 0x02: "bass", 0x04: "custom"}
+
+#: Kept for the Buds Pro 3 regression profile. Does NOT apply to the Buds 4.
 EQ_PRESETS_PRO3 = {0x00: "balanced", 0x01: "bold", 0x02: "serenade", 0x03: "bass", 0x07: "dynaudio"}
 
+#: CONFIRMED: every band frequency below appeared verbatim in a custom EQ reply
+#: as a 16-bit little-endian value, each followed by a signed gain byte.
 EQ_BANDS_HZ = (62, 250, 1000, 4000, 8000, 16000)
 EQ_GAIN_MIN = -6
 EQ_GAIN_MAX = 6
@@ -219,8 +232,57 @@ BASSWAVE_MAX = 5
 
 BATTERY_IDS = {0x01: "left", 0x02: "right", 0x03: "case"}
 
-#: Gadgetbridge's misc-config feature ids.
-MISC_FEATURES = {"ldac": 0x01, "game_mode": 0x02, "multipoint": 0x03, "find_phone": 0x04}
+#: CONFIRMED: ids 0x01-0x40 were requested from 0x010D and exactly these
+#: seventeen came back; 0x21-0x40 returned nothing, so the space ends at 0x20.
+#: Names are NOT known -- toggling hi-res, dual connection and 3D Audio on the
+#: phone moved none of them. Do not guess; measure with `probe watch`.
+#:
+#: Gadgetbridge's ids are REFUTED for this hardware: ldac (0x01) and multipoint
+#: (0x03) are both absent from the reply. The absence of LDAC is consistent with
+#: the Buds 4 using LHDC, which the JSON telemetry channel confirms is active.
+MISC_IDS_MEASURED = (0x02, 0x04, 0x05, 0x06, 0x0B, 0x0C, 0x0D, 0x11, 0x12,
+                     0x14, 0x16, 0x17, 0x18, 0x19, 0x1B, 0x1D, 0x1E)
+
+#: Gadgetbridge's misc-config feature ids. Refuted above; kept for reference.
+MISC_FEATURES_GADGETBRIDGE = {"ldac": 0x01, "game_mode": 0x02,
+                              "multipoint": 0x03, "find_phone": 0x04}
+
+#: The supported-feature list is DYNAMIC. Features 0x1D and 0x1E vanished from
+#: the reply mid-session while BassWave itself stayed fully readable and usable
+#: via 0x0124. So an id's absence means "not currently applicable", NOT "not
+#: supported by this model". Anything built on this must re-read, never cache.
+MISC_LIST_IS_DYNAMIC = True
+
+
+# --- Notifications ---------------------------------------------------------
+# Three distinct families, which is not obvious from any published source.
+
+#: Family 1: 0x0204, seq 0xFF. payload[0] selects a topic; the remainder is
+#: byte-identical to the matching 0x81xx reply minus its status byte.
+NOTIFY_TOPICS = {
+    0x01: "battery",            # confirmed, same body as 0x8106
+    0x02: "wear",               # confirmed, same body as 0x8109
+    0x03: "anc",                # confirmed, same body as 0x810C
+    0x06: "connected_devices",  # confirmed, same body as 0x8112
+    0xF1: "unidentified",
+    0xF2: "connected_device_single",  # one record per peer
+    0xF4: "json_telemetry",     # confirmed: a JSON document, see below
+}
+
+#: Family 2: 0x05xx, where the COMMAND ID itself names the subject. This uses a
+#: numbering of its own that does not match the getter ids -- misc config is
+#: subject 0x03 but getter 0x0D, EQ preset subject 0x04 but getter 0x0F.
+NOTIFY_SUBJECTS = {
+    0x03: "misc_config",   # [count][id][value], confirmed
+    0x04: "eq_preset",     # bare preset byte, confirmed
+    0x06: "custom_eq",     # same body as 0x8122 minus status, confirmed
+    0x08: "basswave",      # [min][max][current], confirmed
+}
+
+#: Family 3: topic 0xF4 carries a UTF-8 JSON document, keyed by "cmd". Observed
+#: types, all diagnostics rather than settings. Every one carries "earside",
+#: which is the cheapest available route to fixing left/right attribution.
+JSON_TELEMETRY_COMMANDS = ("btad", "rta", "lhdc", "boxchg_err_baseinfo")
 
 
 def decode_battery(payload: bytes) -> list[dict]:

@@ -101,11 +101,15 @@ This settles open question 2 -- but the answer is more interesting than expected
 
 ---
 
-## Notifications -- `cmd 0x04 / msgType 0x02`
+## Notifications -- THREE families, not one
 
-`confirmed`. **payload[0] is a TOPIC selector, and the rest of the body is byte-identical
-to the corresponding `0x81xx` reply with its status byte stripped.** One decoder serves
-both.
+No published source describes this correctly. An earlier revision of this document had
+only the first family.
+
+### Family 1 -- `0x0204`, topic-selected `confirmed`
+
+**payload[0] is a TOPIC selector, and the rest of the body is byte-identical to the
+corresponding `0x81xx` reply with its status byte stripped.** One decoder serves both.
 
 | Topic | Body | Same as |
 |---|---|---|
@@ -114,12 +118,59 @@ both.
 | `0x03` | ANC state | `0x810C` |
 | `0x06` | connected-device table | `0x8112` |
 | `0xF1` | `f1 01 01 00 00 03` -- unidentified | -- |
+| `0xF2` | one connected device per push, rather than one combined table | -- |
+| `0xF4` | **a UTF-8 JSON document** -- see family 3 | -- |
 
-Notifications carry `seq = 0xFF` (device-initiated), except the device-table push which
-uses an incrementing seq.
+Carries `seq = 0xFF`, except the device-table push which uses an incrementing seq.
 
-**Battery IS pushed.** This contradicts the Gadgetbridge-inherited note that it must be
-polled. Poll as a fallback, but subscribe for the fast path.
+### Family 2 -- `0x05xx`, subject in the command id `confirmed`
+
+Here the **command id itself names the subject**, with no topic byte. Critically, it uses
+**its own numbering that does not match the getter ids**:
+
+| Push | Subject | Getter id | Payload |
+|---|---|---|---|
+| `0x0503` | misc config | `0x0D` | `01 1d 00` = `[count][featureId][value]` |
+| `0x0504` | EQ preset | `0x0F` | `02` -- bare preset byte |
+| `0x0506` | custom EQ | `0x22` | same body as `0x8122` minus status |
+| `0x0508` | BassWave | `0x24` | `fb 05 fb` = `[min][max][current]` |
+
+Subject `0x03` is misc config but its getter is `0x0D`; subject `0x04` is EQ preset but its
+getter is `0x0F`. **Do not assume the two namespaces align.** Seq is a rolling counter here
+(observed `0C 0D 0E 0F 10`), unlike family 1's fixed `0xFF` -- though `0x0504` was also
+seen with `0xFF`, so seq is not a reliable family discriminator.
+
+### Family 3 -- topic `0xF4`, JSON telemetry `confirmed`
+
+Topic `0xF4` carries a **UTF-8 JSON document**, keyed by `"cmd"`. Captured verbatim:
+
+```json
+{"cmd":"btad","earside":"L","reason":"2"}
+{"cmd":"rta","earside":"L","page_timeout":0,"auth_fail":0,"lmp_timeout":0,
+ "max_conn":0,"already_exit":0,"limit_resource":0,"other":50,
+ "recon_timeout_level":["0","0","0","0"]}
+{"earside":"L","cmd":"lhdc","lhdc_start_cnt":64,"lhdc_96k_cnt":0,"lhdc_192k_cnt":0}
+{"earside":"L","cmd":"boxchg_err_baseinfo","reg_cnt":1,"general_bp_chg_cnt":0,
+ "i2c_exception_len":0,"i2c_exception_cnt":0,...}
+```
+
+All diagnostics rather than settings: `btad` = disconnect reason, `rta` = reconnect
+analytics, `lhdc` = codec counters, `boxchg_err_baseinfo` = charging-case errors.
+
+**Every message carries `"earside"`.** That is explicit left/right labelling straight from
+the device and is the cheapest route to settling the left/right id attribution, which is
+otherwise still open.
+
+`lhdc_start_cnt: 64` confirms LHDC is real and in use on this unit -- consistent with LDAC
+(`0x01`) being absent from the misc feature list.
+
+### Pushes beat polling
+
+**Battery IS pushed**, contradicting the Gadgetbridge-inherited note that it must be
+polled. More importantly, during one run two settings changed *between* poll cycles and
+were visible only in the push stream: BassWave's feature flag flipped `00` -> `01` and
+back, and feature `0x11` changed immediately before a disconnect. **Treat pushes as the
+primary channel and polling as fallback.**
 
 ---
 
@@ -193,7 +244,42 @@ Two Gadgetbridge assumptions are now **refuted for this hardware**: feature `0x0
 and `0x03` (multipoint) are absent from the reply, so they are not implemented under those
 ids. `0x01`'s absence is consistent with the Buds 4 using LHDC rather than LDAC.
 
-Naming the remaining sixteen is a pure differential exercise -- see `probe watch`.
+Naming the remaining sixteen is a pure differential exercise -- see `probe watch`. Note
+that toggling hi-res, dual connection and 3D Audio on the phone moved **none** of them, so
+those three settings do not live here.
+
+### The capability list is DYNAMIC `confirmed`
+
+Mid-session the reply dropped from seventeen features to fifteen: **`0x1D` and `0x1E`
+disappeared entirely** -- not set to zero, absent from the reply. Everything else stayed
+byte-identical.
+
+`0x1D` is BassWave, and BassWave remained **fully functional throughout**: `0x0124` kept
+returning `00 fb 05 05`, and the setting was still usable from the phone.
+
+So an id's absence means **"not currently applicable"**, not "unsupported by this model".
+Two explanations were tested and both failed:
+
+* *LHDC gating* -- refuted; hi-res was on and BassWave worked.
+* *Active playback gating* -- refuted; audio was paused and the ids did not return.
+
+The only correlate that persists is that a custom EQ profile now exists where none did
+before. Unconfirmed. `unknown`
+
+**Design consequence:** any `FeatureSet` must be re-read on state change and on reconnect,
+never cached at connect, or the UI will show controls that no longer exist and hide ones
+that do. The count-prefixed getter makes the whole list one round trip, so re-reading is
+nearly free.
+
+### 3D Audio is not in this protocol `refuted`
+
+Toggling 3D Audio on the phone while polling **all fifty responding command ids** with the
+push stream open produced zero changes and no notification. The phone offers only a
+"Fixed" mode, with no head-tracked option.
+
+Conclusion: OnePlus 3D Audio is a **phone-side spatial upmix** -- the phone renders
+spatialised stereo and transmits ordinary audio over A2DP. There is no bud-side setting.
+Do not spend further effort looking for an opcode.
 
 ### Custom EQ -- `0x0122` `confirmed`
 
@@ -465,3 +551,20 @@ the differential test in the next section is the way to settle it.
 * Firmware is an **ASCII** comma-separated string, not a binary structure. `confirmed`
 * LDAC (`0x01`) and Gadgetbridge's multipoint id (`0x03`) are absent on this
   hardware. `confirmed`
+* ANC map measured for all four modes the phone offers, including adaptive. `confirmed`
+* EQ preset ids measured; the Buds Pro 3 map does not apply. `confirmed`
+* Custom EQ fully decoded, including band frequencies and signed gains. `confirmed`
+* BassWave field order settled differentially. `confirmed`
+* There are **three** notification families, not one. `confirmed`
+* Topic `0xF4` carries JSON telemetry, with explicit `"earside"` labelling. `confirmed`
+* The supported-feature list is dynamic. `confirmed`
+* 3D Audio is phone-side and has no bud-side command. `refuted`
+* Mid-session disconnect handling works: a real link drop produced a clean message
+  and exit code 0, with no traceback. `confirmed`
+
+### Still never attempted
+
+**No SET has ever been transmitted to this hardware.** Everything above is read-only. The
+entire write half of the protocol -- ANC set, EQ set, custom EQ upload, touch remapping --
+is unverified, and its byte space is separate from the readback space, so none of it can
+be inferred from what is confirmed above.
