@@ -11,6 +11,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpBuds.Core", "OpBuds.Core\
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpBuds.Cli", "OpBuds.Cli\OpBuds.Cli.csproj", "{CFA9EC8D-067A-4082-9243-82C920D4AD76}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpBuds.Core.Tests", "..\tests\OpBuds.Core.Tests\OpBuds.Core.Tests.csproj", "{CD527A85-FA35-45D3-996D-F6D0C5F8556C}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -69,6 +71,18 @@ Global
 		{CFA9EC8D-067A-4082-9243-82C920D4AD76}.Release|x64.Build.0 = Release|Any CPU
 		{CFA9EC8D-067A-4082-9243-82C920D4AD76}.Release|x86.ActiveCfg = Release|Any CPU
 		{CFA9EC8D-067A-4082-9243-82C920D4AD76}.Release|x86.Build.0 = Release|Any CPU
+		{CD527A85-FA35-45D3-996D-F6D0C5F8556C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CD527A85-FA35-45D3-996D-F6D0C5F8556C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CD527A85-FA35-45D3-996D-F6D0C5F8556C}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{CD527A85-FA35-45D3-996D-F6D0C5F8556C}.Debug|x64.Build.0 = Debug|Any CPU
+		{CD527A85-FA35-45D3-996D-F6D0C5F8556C}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{CD527A85-FA35-45D3-996D-F6D0C5F8556C}.Debug|x86.Build.0 = Debug|Any CPU
+		{CD527A85-FA35-45D3-996D-F6D0C5F8556C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CD527A85-FA35-45D3-996D-F6D0C5F8556C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CD527A85-FA35-45D3-996D-F6D0C5F8556C}.Release|x64.ActiveCfg = Release|Any CPU
+		{CD527A85-FA35-45D3-996D-F6D0C5F8556C}.Release|x64.Build.0 = Release|Any CPU
+		{CD527A85-FA35-45D3-996D-F6D0C5F8556C}.Release|x86.ActiveCfg = Release|Any CPU
+		{CD527A85-FA35-45D3-996D-F6D0C5F8556C}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
