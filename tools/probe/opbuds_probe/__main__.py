@@ -248,14 +248,22 @@ def cmd_listen(args) -> int:
 
 
 def cmd_set_probe(args) -> int:
+    tier = args.tier.upper()
+
     if not args.i_understand_the_risk:
         print("\n  Tiered SET probing changes real settings on the earbuds.")
-        print("  Preconditions: battery above 30%, earbuds out of the case and in your")
-        print("  ears, the phone's buds settings page closed, no firmware update pending.")
+        print("  Preconditions: battery above 30%, earbuds out of the case, the phone's")
+        print("  buds settings page closed, no firmware update pending.")
+        if tier == "A":
+            print("\n  *** TIER A RINGS THE EARBUDS AT LOCATE VOLUME. ***")
+            print("  Take them OUT OF YOUR EARS before running this. The find-device")
+            print("  tone is designed to be heard across a room, not from inside your")
+            print("  ear canal.")
+        else:
+            print("  Earbuds should be in your ears so you can hear each change.")
         print("\n  Re-run with --i-understand-the-risk to proceed.")
         return 2
 
-    tier = args.tier.upper()
     if tier not in probes.TIERS:
         print(f"  unknown tier {tier}; choose from {sorted(probes.TIERS)}")
         return 2
