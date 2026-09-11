@@ -48,23 +48,24 @@ public sealed record AppSettings
     public bool ProtocolLogging { get; init; }
 
     /// <summary>
-    /// Draw with WPF's software renderer instead of the GPU. On by default.
+    /// Draw with WPF's software renderer instead of the GPU. Off by default.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Not a micro-optimisation in reverse — it is insurance against a total blank. When
-    /// WPF's hardware pipeline gets into a bad state (a driver reset will do it), every
-    /// window in the process paints nothing at all: correct layout, correct automation
-    /// tree, zero pixels. That was observed on this machine mid-development, and it hit an
-    /// already-committed build that had rendered perfectly an hour earlier.
+    /// An escape hatch, not a default. During development every window in the process
+    /// started painting nothing at all — correct layout, correct automation tree, zero
+    /// pixels, and <c>PrintWindow</c> blank too. The cause was a closed laptop lid: with the
+    /// internal panel off there is no render target, and WPF's hardware pipeline produces
+    /// nothing rather than failing. Software rendering drew it because it never needs one.
     /// </para>
     /// <para>
-    /// This window is 470x720 with no animation, so the software renderer is
-    /// indistinguishable in use — and a slightly cheaper redraw is a good trade against a
-    /// failure mode where the app appears to be broken and offers no clue why.
+    /// So the GPU path stays the default, where it belongs. This switch remains because it
+    /// is the one-line recovery if the same symptom ever appears with the lid open — a
+    /// driver reset can wedge the pipeline the same way, and a blank window offers no clue
+    /// about which of the two it is.
     /// </para>
     /// </remarks>
-    public bool SoftwareRendering { get; init; } = true;
+    public bool SoftwareRendering { get; init; }
 
     /// <summary>"system", "light" or "dark".</summary>
     public string Theme { get; init; } = "system";
