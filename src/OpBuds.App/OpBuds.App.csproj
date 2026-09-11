@@ -1,0 +1,63 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>false</UseWindowsForms>
+    <AssemblyName>OpBuds</AssemblyName>
+    <RootNamespace>OpBuds.App</RootNamespace>
+    <ApplicationIcon>Assets\opbuds.ico</ApplicationIcon>
+
+    <!--
+      Overrides Directory.Build.props, which turns invariant globalization on for the whole
+      solution. WPF cannot run under it: every binding resolves the element's xml:lang
+      ("en-us") to a specific culture, and in invariant mode that throws
+      "Cannot find non-neutral culture related to 'en-us'" from inside the binding engine.
+      The failure surfaces as a XamlParseException naming whichever property bound first,
+      which says nothing about the real cause. Invariant stays on for the protocol libraries
+      and the CLI, where it is correct and free.
+    -->
+    <InvariantGlobalization>false</InvariantGlobalization>
+
+    <!--
+      The app is the one project that will ship to a machine without a .NET SDK, so it is
+      also the one that has to be publishable single-file. Nothing here changes the debug
+      build; it only keeps `dotnet publish` honest.
+    -->
+    <SelfContained>false</SelfContained>
+    <RuntimeIdentifier Condition="'$(Configuration)' == 'Release'">win-x64</RuntimeIdentifier>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
+    <PackageReference Include="WPF-UI" Version="4.3.0" />
+
+    <!--
+      WPF-UI.Tray was here and is gone. Its NotifyIcon registers from Loaded, which never
+      fires for an app that starts in the tray with no window, and explicit registration
+      declined three different ways. Services/TrayIcon.cs calls Shell_NotifyIcon directly
+      instead — fewer moving parts, and it supports left-click, which the package's
+      code-first tray service does not expose.
+    -->
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpBuds.Core\OpBuds.Core.csproj" />
+    <ProjectReference Include="..\OpBuds.Protocol\OpBuds.Protocol.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\opbuds.ico" />
+
+    <!--
+      The same artwork as a PNG, because WPF's ICO decoder cannot read PNG-compressed
+      icon frames — and every frame in opbuds.ico is PNG-compressed, which is what the
+      Win32 shell wants. Loading the .ico into a BitmapImage therefore yields nothing and
+      the tray icon silently fails to appear.
+    -->
+    <Resource Include="Assets\opbuds.png" />
+  </ItemGroup>
+
+</Project>

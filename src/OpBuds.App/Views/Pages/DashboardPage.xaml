@@ -1,0 +1,192 @@
+<Page x:Class="OpBuds.App.Views.Pages.DashboardPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+      Title="Dashboard">
+
+    <ScrollViewer Padding="16,4,16,16" VerticalScrollBarVisibility="Auto">
+        <StackPanel>
+
+            <ui:InfoBar Margin="0,0,0,12"
+                        IsClosable="False"
+                        IsOpen="{Binding Buds.ChannelBusy, Mode=OneWay}"
+                        Message="Something else holds the earbuds' control channel. Close the earbud settings page on your phone."
+                        Severity="Warning"
+                        Title="Control channel busy" />
+
+            <ui:InfoBar Margin="0,0,0,12"
+                        IsClosable="False"
+                        IsOpen="{Binding Buds.LastError, Mode=OneWay, Converter={StaticResource HasValue}}"
+                        Message="{Binding Buds.LastError, Mode=OneWay}"
+                        Severity="Error"
+                        Title="Last error" />
+
+            <!--  Connection  -->
+            <Border Margin="0,0,0,12"
+                    Padding="14"
+                    Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1"
+                    CornerRadius="8">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel>
+                        <TextBlock FontSize="16"
+                                   FontWeight="SemiBold"
+                                   Text="{Binding Buds.StatusText, Mode=OneWay}"
+                                   TextWrapping="Wrap" />
+                        <TextBlock Margin="0,4,0,0"
+                                   FontSize="12"
+                                   Style="{StaticResource Muted}"
+                                   Text="{Binding Buds.WearText, Mode=OneWay}" />
+                    </StackPanel>
+
+                    <ui:ProgressRing Grid.Column="1"
+                                     Width="22"
+                                     Height="22"
+                                     IsIndeterminate="True"
+                                     Visibility="{Binding Buds.IsBusy, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
+                </Grid>
+            </Border>
+
+            <!--  Battery  -->
+            <TextBlock Style="{StaticResource SectionHeader}" Text="BATTERY" />
+            <Border Margin="0,0,0,12"
+                    Padding="14"
+                    Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1"
+                    CornerRadius="8">
+                <StackPanel>
+                    <Grid Margin="0,3">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="44" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="44" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock VerticalAlignment="Center" Text="Left" />
+                        <ProgressBar Grid.Column="1"
+                                     Height="6"
+                                     Margin="8,0"
+                                     VerticalAlignment="Center"
+                                     Maximum="100"
+                                     Minimum="0"
+                                     Value="{Binding Buds.LeftPercent, Mode=OneWay, TargetNullValue=0, FallbackValue=0}" />
+                        <ui:SymbolIcon Grid.Column="2"
+                                       Margin="0,0,4,0"
+                                       FontSize="14"
+                                       Symbol="Flash24"
+                                       Visibility="{Binding Buds.LeftCharging, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
+                        <TextBlock Grid.Column="3"
+                                   HorizontalAlignment="Right"
+                                   VerticalAlignment="Center"
+                                   Text="{Binding Buds.LeftPercent, Mode=OneWay, Converter={StaticResource Percent}}" />
+                    </Grid>
+
+                    <Grid Margin="0,3">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="44" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="44" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock VerticalAlignment="Center" Text="Right" />
+                        <ProgressBar Grid.Column="1"
+                                     Height="6"
+                                     Margin="8,0"
+                                     VerticalAlignment="Center"
+                                     Maximum="100"
+                                     Minimum="0"
+                                     Value="{Binding Buds.RightPercent, Mode=OneWay, TargetNullValue=0, FallbackValue=0}" />
+                        <ui:SymbolIcon Grid.Column="2"
+                                       Margin="0,0,4,0"
+                                       FontSize="14"
+                                       Symbol="Flash24"
+                                       Visibility="{Binding Buds.RightCharging, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
+                        <TextBlock Grid.Column="3"
+                                   HorizontalAlignment="Right"
+                                   VerticalAlignment="Center"
+                                   Text="{Binding Buds.RightPercent, Mode=OneWay, Converter={StaticResource Percent}}" />
+                    </Grid>
+
+                    <Grid Margin="0,3">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="44" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="44" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock VerticalAlignment="Center" Text="Case" />
+                        <ProgressBar Grid.Column="1"
+                                     Height="6"
+                                     Margin="8,0"
+                                     VerticalAlignment="Center"
+                                     Maximum="100"
+                                     Minimum="0"
+                                     Value="{Binding Buds.CasePercent, Mode=OneWay, TargetNullValue=0, FallbackValue=0}" />
+                        <ui:SymbolIcon Grid.Column="2"
+                                       Margin="0,0,4,0"
+                                       FontSize="14"
+                                       Symbol="Flash24"
+                                       Visibility="{Binding Buds.CaseCharging, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
+                        <TextBlock Grid.Column="3"
+                                   HorizontalAlignment="Right"
+                                   VerticalAlignment="Center"
+                                   Text="{Binding Buds.CasePercent, Mode=OneWay, Converter={StaticResource Percent}}" />
+                    </Grid>
+
+                    <ui:Button Margin="0,10,0,0"
+                               HorizontalAlignment="Left"
+                               Appearance="Secondary"
+                               Command="{Binding RefreshCommand}"
+                               Content="Refresh"
+                               Icon="{ui:SymbolIcon ArrowClockwise24}" />
+                </StackPanel>
+            </Border>
+
+            <!--  Noise control  -->
+            <TextBlock Style="{StaticResource SectionHeader}" Text="NOISE CONTROL" />
+            <Border Margin="0,0,0,12"
+                    Padding="14"
+                    Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1"
+                    CornerRadius="8">
+                <ItemsControl IsEnabled="{Binding Buds.IsConnected, Mode=OneWay}" ItemsSource="{Binding AncOptions}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <RadioButton Margin="0,2"
+                                         Command="{Binding DataContext.SetAncCommand, RelativeSource={RelativeSource AncestorType=Page}}"
+                                         CommandParameter="{Binding Mode}"
+                                         Content="{Binding Label}"
+                                         GroupName="AncDashboard">
+                                <RadioButton.IsChecked>
+                                    <MultiBinding Converter="{StaticResource Equality}" Mode="OneWay">
+                                        <Binding Path="DataContext.Buds.CurrentAnc" RelativeSource="{RelativeSource AncestorType=Page}" />
+                                        <Binding Path="Mode" />
+                                    </MultiBinding>
+                                </RadioButton.IsChecked>
+                            </RadioButton>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </Border>
+
+            <!--  Find  -->
+            <ui:Button HorizontalAlignment="Left"
+                       Command="{Binding FindCommand}"
+                       Content="Find my earbuds…"
+                       Icon="{ui:SymbolIcon Speaker224}"
+                       IsEnabled="{Binding Buds.IsConnected, Mode=OneWay}" />
+            <TextBlock Margin="0,6,0,0"
+                       FontSize="12"
+                       Style="{StaticResource Muted}"
+                       Text="Rings at locate volume. Take them out of your ears first — the tone stops on its own and there is no stop command." />
+        </StackPanel>
+    </ScrollViewer>
+</Page>

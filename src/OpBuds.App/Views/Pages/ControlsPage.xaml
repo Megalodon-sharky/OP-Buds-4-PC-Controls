@@ -1,0 +1,136 @@
+<Page x:Class="OpBuds.App.Views.Pages.ControlsPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+      Title="Controls">
+
+    <ScrollViewer Padding="16,4,16,16" VerticalScrollBarVisibility="Auto">
+        <StackPanel>
+
+            <ui:InfoBar Margin="0,0,0,12"
+                        IsClosable="False"
+                        IsOpen="True"
+                        Message="{Binding ReadOnlyReason}"
+                        Severity="Informational"
+                        Title="Read-only" />
+
+            <TextBlock Style="{StaticResource SectionHeader}" Text="TOUCH GESTURES" />
+            <Border Margin="0,0,0,12"
+                    Padding="14"
+                    Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1"
+                    CornerRadius="8">
+                <StackPanel>
+                    <Grid Margin="0,0,0,6">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="60" />
+                            <ColumnDefinition Width="70" />
+                            <ColumnDefinition Width="80" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock FontSize="11" Style="{StaticResource Muted}" Text="SIDE" />
+                        <TextBlock Grid.Column="1"
+                                   FontSize="11"
+                                   Style="{StaticResource Muted}"
+                                   Text="CONTEXT" />
+                        <TextBlock Grid.Column="2"
+                                   FontSize="11"
+                                   Style="{StaticResource Muted}"
+                                   Text="GESTURE" />
+                        <TextBlock Grid.Column="3"
+                                   FontSize="11"
+                                   Style="{StaticResource Muted}"
+                                   Text="ACTION" />
+                    </Grid>
+
+                    <ItemsControl ItemsSource="{Binding Buds.TouchBindings, Mode=OneWay}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="0,1">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="60" />
+                                        <ColumnDefinition Width="70" />
+                                        <ColumnDefinition Width="80" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock FontSize="12" Text="{Binding Side}" />
+                                    <TextBlock Grid.Column="1"
+                                               FontFamily="Consolas"
+                                               FontSize="12"
+                                               Text="{Binding ContextType, StringFormat=0x{0:X2}}" />
+                                    <TextBlock Grid.Column="2"
+                                               FontFamily="Consolas"
+                                               FontSize="12"
+                                               Text="{Binding Gesture, StringFormat=0x{0:X2}}" />
+                                    <TextBlock Grid.Column="3"
+                                               FontFamily="Consolas"
+                                               FontSize="12"
+                                               Text="{Binding Action, StringFormat=0x{0:X2}}" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <!--
+                        Gesture and action numbers are shown raw because that is all that is
+                        known. Naming them would mean inventing a mapping, and an invented
+                        label is worse than an honest hex value.
+                    -->
+                    <TextBlock Margin="0,8,0,0"
+                               FontSize="12"
+                               Style="{StaticResource Muted}"
+                               Text="Context 0x01 carries six gestures and 0x06 only three, consistent with 0x06 being the in-call context. The gesture and action numbers have not been mapped to names, so they are shown as read." />
+                </StackPanel>
+            </Border>
+
+            <TextBlock Style="{StaticResource SectionHeader}" Text="FEATURE SWITCHES" />
+            <Border Padding="14"
+                    Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1"
+                    CornerRadius="8">
+                <StackPanel>
+                    <ItemsControl ItemsSource="{Binding Buds.MiscFeatures, Mode=OneWay}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="0,2">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="70" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock FontFamily="Consolas"
+                                               FontSize="12"
+                                               Text="{Binding Id, StringFormat=0x{0:X2}}" />
+                                    <TextBlock Grid.Column="1" FontSize="12" Text="unnamed">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding Id}" Value="29">
+                                                        <Setter Property="Text" Value="BassWave" />
+                                                        <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                    <TextBlock Grid.Column="2"
+                                               FontFamily="Consolas"
+                                               FontSize="12"
+                                               Text="{Binding Value}" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <TextBlock Margin="0,8,0,0"
+                               FontSize="12"
+                               Style="{StaticResource Muted}"
+                               Text="Seventeen switches exist on this unit and only 0x1D has been identified. The list is read in pages of fifteen ids, because the reply truncates at thirty-two bytes and reports the truncated count as if it were real." />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

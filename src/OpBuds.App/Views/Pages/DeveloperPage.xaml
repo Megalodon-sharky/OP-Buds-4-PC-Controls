@@ -1,0 +1,68 @@
+<Page x:Class="OpBuds.App.Views.Pages.DeveloperPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+      Title="Developer">
+
+    <Grid Margin="16,4,16,16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!--
+            io rows are ground truth: the raw chunk exactly as the socket delivered it,
+            never frame-split. frame rows are this app's reading of those bytes. Keeping
+            both visible is what made the varint length field findable in the first place.
+        -->
+        <TextBlock Grid.Row="0"
+                   FontSize="12"
+                   Style="{StaticResource Muted}"
+                   Text="Live traffic, newest at the bottom. io rows are the raw wire chunks; frame rows are this app's reading of them. The last 400 are kept." />
+
+        <StackPanel Grid.Row="1" Margin="0,10" Orientation="Horizontal">
+            <ui:Button Margin="0,0,8,0"
+                       Appearance="Secondary"
+                       Command="{Binding ExportCommand}"
+                       Content="Export…" />
+            <ui:Button Appearance="Secondary"
+                       Command="{Binding ClearCommand}"
+                       Content="Clear" />
+        </StackPanel>
+
+        <Border Grid.Row="2"
+                Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                BorderThickness="1"
+                CornerRadius="8">
+            <ListBox Background="Transparent"
+                     BorderThickness="0"
+                     ItemsSource="{Binding Buds.Traffic}"
+                     ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                     VirtualizingPanel.IsVirtualizing="True">
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Width="56"
+                                       FontFamily="Consolas"
+                                       FontSize="11"
+                                       Style="{StaticResource Muted}"
+                                       Text="{Binding T, StringFormat={}{0:F3}}" />
+                            <TextBlock Width="26"
+                                       FontFamily="Consolas"
+                                       FontSize="11"
+                                       Text="{Binding Direction}" />
+                            <TextBlock Width="150"
+                                       FontFamily="Consolas"
+                                       FontSize="11"
+                                       Text="{Binding Summary}"
+                                       TextTrimming="CharacterEllipsis" />
+                            <TextBlock FontFamily="Consolas" FontSize="11" Text="{Binding Hex}" />
+                        </StackPanel>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </Border>
+    </Grid>
+</Page>

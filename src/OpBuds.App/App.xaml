@@ -1,0 +1,42 @@
+<Application x:Class="OpBuds.App.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:vm="clr-namespace:OpBuds.App.ViewModels"
+             ShutdownMode="OnExplicitShutdown">
+
+    <!--
+        OnExplicitShutdown, not OnLastWindowClose: closing the window hides it to the tray,
+        and on autostart there may never be a window at all.
+    -->
+
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ui:ThemesDictionary Theme="Dark" />
+                <ui:ControlsDictionary />
+            </ResourceDictionary.MergedDictionaries>
+
+            <vm:EnumMatchConverter x:Key="EnumMatch" />
+            <vm:EqualityMultiConverter x:Key="Equality" />
+            <vm:HasValueConverter x:Key="HasValue" />
+            <vm:NullDashConverter x:Key="NullDash" />
+            <vm:PercentConverter x:Key="Percent" />
+            <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+
+            <Thickness x:Key="CardSpacing">0,0,0,12</Thickness>
+
+            <Style x:Key="SectionHeader" TargetType="TextBlock">
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="FontSize" Value="13" />
+                <Setter Property="Margin" Value="0,0,0,6" />
+                <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+            </Style>
+
+            <Style x:Key="Muted" TargetType="TextBlock">
+                <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+                <Setter Property="TextWrapping" Value="Wrap" />
+            </Style>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

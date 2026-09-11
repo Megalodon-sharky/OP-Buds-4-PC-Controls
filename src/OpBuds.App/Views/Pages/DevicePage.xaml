@@ -1,0 +1,140 @@
+<Page x:Class="OpBuds.App.Views.Pages.DevicePage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+      Title="Device">
+
+    <ScrollViewer Padding="16,4,16,16" VerticalScrollBarVisibility="Auto">
+        <StackPanel>
+
+            <TextBlock Style="{StaticResource SectionHeader}" Text="IDENTITY" />
+            <Border Margin="0,0,0,12"
+                    Padding="14"
+                    Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1"
+                    CornerRadius="8">
+                <StackPanel>
+                    <TextBlock FontSize="16" FontWeight="SemiBold" Text="{Binding Buds.DeviceName}" />
+
+                    <Grid Margin="0,8,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="84" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <TextBlock FontSize="12" Style="{StaticResource Muted}" Text="Address" />
+                        <TextBlock Grid.Column="1"
+                                   FontFamily="Consolas"
+                                   FontSize="12"
+                                   Text="{Binding Buds.DeviceMac}" />
+
+                        <TextBlock Grid.Row="1" FontSize="12" Style="{StaticResource Muted}" Text="Firmware" />
+                        <TextBlock Grid.Row="1"
+                                   Grid.Column="1"
+                                   FontFamily="Consolas"
+                                   FontSize="12"
+                                   Text="{Binding Buds.Firmware, Mode=OneWay, Converter={StaticResource NullDash}}"
+                                   TextWrapping="Wrap" />
+
+                        <TextBlock Grid.Row="2" FontSize="12" Style="{StaticResource Muted}" Text="Link" />
+                        <TextBlock Grid.Row="2"
+                                   Grid.Column="1"
+                                   FontSize="12"
+                                   Text="{Binding Buds.LinkState, Mode=OneWay}" />
+                    </Grid>
+
+                    <StackPanel Margin="0,12,0,0" Orientation="Horizontal">
+                        <ui:Button Margin="0,0,8,0"
+                                   Command="{Binding ReconnectCommand}"
+                                   Content="Reconnect now"
+                                   Icon="{ui:SymbolIcon Bluetooth24}" />
+                        <ui:Button Appearance="Secondary"
+                                   Command="{Binding RefreshCommand}"
+                                   Content="Re-read everything"
+                                   Icon="{ui:SymbolIcon ArrowClockwise24}" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <TextBlock Style="{StaticResource SectionHeader}" Text="CONNECTED TO" />
+            <Border Margin="0,0,0,12"
+                    Padding="14"
+                    Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1"
+                    CornerRadius="8">
+                <StackPanel>
+                    <ItemsControl ItemsSource="{Binding Buds.Peers, Mode=OneWay}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="0,2">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock FontSize="12" Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Grid.Column="1"
+                                               FontFamily="Consolas"
+                                               FontSize="11"
+                                               Style="{StaticResource Muted}"
+                                               Text="{Binding MacAddress}" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <TextBlock FontSize="12" Text="Nothing reported.">
+                        <TextBlock.Style>
+                            <Style BasedOn="{StaticResource Muted}" TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Buds.Peers.Count}" Value="0">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </StackPanel>
+            </Border>
+
+            <TextBlock Style="{StaticResource SectionHeader}" Text="HI-RES AUDIO" />
+            <Border Margin="0,0,0,12"
+                    Padding="14"
+                    Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1"
+                    CornerRadius="8">
+                <TextBlock FontSize="12" Style="{StaticResource Muted}" Text="{Binding HiResNote}" />
+            </Border>
+
+            <!--
+                Shown rather than silently omitted. Each of these was investigated and closed,
+                and listing the reason is what stops the same question being reopened.
+            -->
+            <TextBlock Style="{StaticResource SectionHeader}" Text="DELIBERATELY ABSENT" />
+            <Border Padding="14"
+                    Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1"
+                    CornerRadius="8">
+                <ItemsControl ItemsSource="{Binding Excluded}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Margin="0,0,0,10">
+                                <TextBlock FontSize="12" FontWeight="SemiBold" Text="{Binding Key}" />
+                                <TextBlock FontSize="12" Style="{StaticResource Muted}" Text="{Binding Value}" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</Page>
