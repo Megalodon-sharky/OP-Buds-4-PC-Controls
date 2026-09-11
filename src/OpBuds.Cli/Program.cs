@@ -55,6 +55,14 @@ internal static class Program
             Console.Error.WriteLine($"  {ex.Message}");
             return 2;
         }
+        catch (IOException ex)
+        {
+            // Buds in the case is the most common way to reach here, and it is an ordinary
+            // condition, not a fault. Must stay below ChannelBusyException, which derives
+            // from IOException and has a more specific remedy.
+            Console.Error.WriteLine($"  {ex.Message}");
+            return 3;
+        }
         catch (OperationCanceledException)
         {
             Console.Error.WriteLine("  cancelled");

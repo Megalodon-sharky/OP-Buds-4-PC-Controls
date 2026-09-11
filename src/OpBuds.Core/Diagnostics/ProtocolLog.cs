@@ -19,6 +19,13 @@ namespace OpBuds.Core.Diagnostics;
 /// there to re-read.
 /// </para>
 /// </remarks>
+/// <summary>One logged record, as raised to live observers.</summary>
+/// <remarks>
+/// Pre-formatted rather than structured because its only consumer is a display. Anything
+/// wanting to compute over these should read the JSONL file, which keeps the raw bytes.
+/// </remarks>
+public sealed record ProtocolRecord(double T, string Kind, string Direction, string Summary, string Hex);
+
 public sealed class ProtocolLog : IDisposable
 {
     private static readonly JsonSerializerOptions Options = new() { WriteIndented = false };
@@ -31,8 +38,24 @@ public sealed class ProtocolLog : IDisposable
 
     public string? Path { get; private init; }
 
+    /// <summary>
+    /// Every record, as it is written. Raised on the caller's thread.
+    /// </summary>
+    /// <remarks>
+    /// This is how the app's developer view shows live traffic without a second logging
+    /// path running alongside the file one — the two would drift the moment either changed.
+    /// </remarks>
+    public event EventHandler<ProtocolRecord>? Recorded;
+
     /// <summary>A log that discards everything, so callers never need a null check.</summary>
+    /// <remarks>
+    /// A shared singleton, so <b>do not subscribe to its <see cref="Recorded"/> event</b> —
+    /// use <see cref="Sink"/> for an instance of your own.
+    /// </remarks>
     public static ProtocolLog Null { get; } = new(StreamWriter.Null);
+
+    /// <summary>A log that writes nothing but still raises <see cref="Recorded"/>.</summary>
+    public static ProtocolLog Sink() => new(StreamWriter.Null);
 
     /// <summary>Opens a capture file named like the probe's: UTC stamp, MAC, subcommand.</summary>
     public static ProtocolLog Create(string directory, string macAddress, string subcommand)
@@ -61,12 +84,15 @@ public sealed class ProtocolLog : IDisposable
 
     public void Io(string direction, ReadOnlySpan<byte> raw, string? note = null)
     {
+        var elapsed = Elapsed();
+        var hex = Convert.ToHexString(raw).ToLowerInvariant();
+
         var record = new Dictionary<string, object?>
         {
             ["type"] = "io",
-            ["t"] = Elapsed(),
+            ["t"] = elapsed,
             ["dir"] = direction,
-            ["raw"] = Convert.ToHexString(raw).ToLowerInvariant(),
+            ["raw"] = hex,
         };
 
         if (note is not null)
@@ -75,25 +101,39 @@ public sealed class ProtocolLog : IDisposable
         }
 
         Write(record);
+        Recorded?.Invoke(this, new ProtocolRecord(elapsed, "io", direction, note ?? string.Empty, hex));
     }
 
-    public void Frame(ushort command, byte sequence, ReadOnlySpan<byte> payload) =>
+    public void Frame(ushort command, byte sequence, ReadOnlySpan<byte> payload)
+    {
+        var elapsed = Elapsed();
+        var hex = Convert.ToHexString(payload).ToLowerInvariant();
+
         Write(new Dictionary<string, object?>
         {
             ["type"] = "frame",
-            ["t"] = Elapsed(),
+            ["t"] = elapsed,
             ["command"] = $"0x{command:X4}",
             ["seq"] = sequence,
-            ["payload"] = Convert.ToHexString(payload).ToLowerInvariant(),
+            ["payload"] = hex,
         });
 
-    public void Note(string message) =>
+        Recorded?.Invoke(this, new ProtocolRecord(elapsed, "frame", "rx", $"0x{command:X4}", hex));
+    }
+
+    public void Note(string message)
+    {
+        var elapsed = Elapsed();
+
         Write(new Dictionary<string, object?>
         {
             ["type"] = "note",
-            ["t"] = Elapsed(),
+            ["t"] = elapsed,
             ["message"] = message,
         });
+
+        Recorded?.Invoke(this, new ProtocolRecord(elapsed, "note", string.Empty, message, string.Empty));
+    }
 
     private double Elapsed() =>
         Math.Round((Environment.TickCount64 - _startTicks) / 1000.0, 4);
