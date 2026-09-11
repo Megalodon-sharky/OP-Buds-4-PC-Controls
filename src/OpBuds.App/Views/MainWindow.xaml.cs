@@ -12,20 +12,43 @@ public partial class MainWindow : FluentWindow
     private readonly BudsController _buds;
     private readonly SettingsStore _settings;
 
-    public MainWindow(IServiceProvider services, BudsController buds, SettingsStore settings)
+    public MainWindow(
+        BudsController buds,
+        SettingsStore settings,
+        DashboardPage dashboard,
+        SoundPage sound,
+        ControlsPage controls,
+        DevicePage device,
+        SettingsPage settingsPage,
+        DeveloperPage developer)
     {
         _buds = buds;
         _settings = settings;
 
         InitializeComponent();
 
-        // Pages come from the container, so each one gets its view model injected rather
-        // than reaching for a global.
-        RootNavigation.SetServiceProvider(services);
+        // Views are injected and held, not navigated to. Each one keeps its scroll position
+        // and its bindings for the life of the window, and the container wires their view
+        // models -- no page-provider indirection needed.
+        Rail.ItemsSource = new RailItem[]
+        {
+            new(SymbolRegular.Home24, "Dashboard", dashboard),
+            new(SymbolRegular.MusicNote124, "Sound", sound),
+            new(SymbolRegular.HandDraw24, "Controls", controls),
+            new(SymbolRegular.Bluetooth24, "Device", device),
+            new(SymbolRegular.Settings24, "Settings", settingsPage),
 
-        Loaded += (_, _) => RootNavigation.Navigate(typeof(DashboardPage));
+            // Developer ships in v1 on purpose. It is not a user feature; it is how
+            // everything else gets diagnosed while the protocol map still has holes.
+            new(SymbolRegular.CodeBlock24, "Developer", developer),
+        };
+
+        Rail.SelectedIndex = 0;
         IsVisibleChanged += OnIsVisibleChanged;
     }
+
+    /// <summary>One entry in the left rail.</summary>
+    public sealed record RailItem(SymbolRegular Symbol, string Label, object View);
 
     /// <summary>
     /// Polls faster while anyone can see the numbers, slower when only the tray can.

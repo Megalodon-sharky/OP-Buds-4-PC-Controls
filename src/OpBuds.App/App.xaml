@@ -24,18 +24,79 @@
             <vm:PercentConverter x:Key="Percent" />
             <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
 
-            <Thickness x:Key="CardSpacing">0,0,0,12</Thickness>
+            <!--
+                Literal white, not an override of WPF-UI's TextFillColor* keys. Overriding
+                those was tried and produced an app that laid out perfectly and painted
+                nothing: the keys are rewritten by WPF-UI's own theme manager at runtime,
+                so ours and theirs took turns winning and the text ended up the same colour
+                as whatever was behind it. A literal cannot be overwritten by anything.
 
-            <Style x:Key="SectionHeader" TargetType="TextBlock">
-                <Setter Property="FontWeight" Value="SemiBold" />
-                <Setter Property="FontSize" Value="13" />
-                <Setter Property="Margin" Value="0,0,0,6" />
-                <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+                White text only makes sense on a dark surface, so the app is dark-only -
+                see ThemeSupport.Apply.
+            -->
+            <SolidColorBrush x:Key="Ink" Color="#FFFFFFFF" />
+            <SolidColorBrush x:Key="InkDim" Color="#B8FFFFFF" />
+
+            <Style TargetType="TextBlock">
+                <Setter Property="Foreground" Value="{StaticResource Ink}" />
+                <Setter Property="FontSize" Value="14" />
+                <Setter Property="TextWrapping" Value="Wrap" />
             </Style>
 
+            <Style TargetType="RadioButton">
+                <Setter Property="Foreground" Value="{StaticResource Ink}" />
+                <Setter Property="FontSize" Value="14" />
+            </Style>
+
+            <Style TargetType="CheckBox">
+                <Setter Property="Foreground" Value="{StaticResource Ink}" />
+            </Style>
+
+            <Style x:Key="SectionHeader" TargetType="TextBlock">
+                <Setter Property="Foreground" Value="{StaticResource Ink}" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="FontSize" Value="12" />
+                <Setter Property="Margin" Value="2,0,0,6" />
+            </Style>
+
+            <!-- Kept for hierarchy: still white, just smaller. -->
             <Style x:Key="Muted" TargetType="TextBlock">
-                <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+                <Setter Property="Foreground" Value="{StaticResource Ink}" />
+                <Setter Property="FontSize" Value="12" />
                 <Setter Property="TextWrapping" Value="Wrap" />
+            </Style>
+
+            <Style x:Key="Card" TargetType="Border">
+                <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorDefaultBrush}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource CardStrokeColorDefaultBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="CornerRadius" Value="8" />
+                <Setter Property="Padding" Value="14" />
+                <Setter Property="Margin" Value="0,0,0,12" />
+            </Style>
+
+            <!--
+                The battery badges, matching the phone's: a filled case outline and filled
+                L / R discs with the letter knocked out. Small on purpose - the number is
+                the information, the badge only says which number it is.
+            -->
+            <Style x:Key="BatteryValue" TargetType="TextBlock">
+                <Setter Property="Foreground" Value="{StaticResource Ink}" />
+                <Setter Property="FontSize" Value="18" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+                <Setter Property="Margin" Value="5,0,16,0" />
+            </Style>
+
+            <Style x:Key="BudLetter" TargetType="TextBlock">
+                <Setter Property="FontSize" Value="9" />
+                <Setter Property="FontWeight" Value="Bold" />
+                <Setter Property="HorizontalAlignment" Value="Center" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+                <Setter Property="TextWrapping" Value="NoWrap" />
+
+                <!-- Knocked out of the white badge, so it is the surface colour. -->
+                <Setter Property="Foreground" Value="#FF16161A" />
             </Style>
         </ResourceDictionary>
     </Application.Resources>

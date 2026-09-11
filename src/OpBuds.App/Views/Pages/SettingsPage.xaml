@@ -1,8 +1,7 @@
-<Page x:Class="OpBuds.App.Views.Pages.SettingsPage"
+<UserControl x:Class="OpBuds.App.Views.Pages.SettingsPage"
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-      xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
-      Title="Settings">
+      xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml">
 
     <ScrollViewer Padding="16,4,16,16" VerticalScrollBarVisibility="Auto">
         <StackPanel>
@@ -26,7 +25,7 @@
                                      Content="Start with Windows"
                                      IsChecked="{Binding StartWithWindows, Mode=TwoWay}" />
                     <TextBlock Margin="0,0,0,8"
-                               FontSize="11"
+                               FontSize="13"
                                Style="{StaticResource Muted}"
                                Text="Reads the registry Run entry directly, so it stays honest if you remove it from Task Manager." />
 
@@ -39,22 +38,6 @@
                 </StackPanel>
             </Border>
 
-            <TextBlock Style="{StaticResource SectionHeader}" Text="APPEARANCE" />
-            <Border Margin="0,0,0,12"
-                    Padding="14"
-                    Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
-                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
-                    BorderThickness="1"
-                    CornerRadius="8">
-                <StackPanel>
-                    <TextBlock Margin="0,0,0,6" FontSize="12" Text="Theme" />
-                    <ComboBox Width="160"
-                              HorizontalAlignment="Left"
-                              ItemsSource="{Binding Themes}"
-                              SelectedItem="{Binding Theme, Mode=TwoWay}" />
-                </StackPanel>
-            </Border>
-
             <TextBlock Style="{StaticResource SectionHeader}" Text="POLLING" />
             <Border Margin="0,0,0,12"
                     Padding="14"
@@ -63,14 +46,14 @@
                     BorderThickness="1"
                     CornerRadius="8">
                 <StackPanel>
-                    <TextBlock FontSize="12" Text="{Binding PollSecondsVisible, StringFormat=Battery poll while the window is open: {0}s}" />
+                    <TextBlock FontSize="13" Text="{Binding PollSecondsVisible, StringFormat=Battery poll while the window is open: {0}s}" />
                     <Slider Margin="0,6,0,0"
                             IsSnapToTickEnabled="True"
                             Maximum="60"
                             Minimum="2"
                             TickFrequency="1"
                             Value="{Binding PollSecondsVisible, Mode=TwoWay}" />
-                    <TextBlock FontSize="11"
+                    <TextBlock FontSize="13"
                                Style="{StaticResource Muted}"
                                Text="Battery is never pushed by the earbuds, so it has to be asked for. Tray-only drops to 30s and idle to 120s automatically." />
                 </StackPanel>
@@ -84,7 +67,7 @@
                     BorderThickness="1"
                     CornerRadius="8">
                 <StackPanel>
-                    <TextBlock Margin="0,0,0,6" FontSize="12" Text="Bluetooth address" />
+                    <TextBlock Margin="0,0,0,6" FontSize="13" Text="Bluetooth address" />
                     <ui:TextBox FontFamily="Consolas"
                                 PlaceholderText="AA:BB:CC:DD:EE:FF"
                                 Text="{Binding DeviceMac, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" />
@@ -100,13 +83,13 @@
                 <StackPanel>
                     <ui:ToggleSwitch Content="Write a protocol capture to disk" IsChecked="{Binding ProtocolLogging, Mode=TwoWay}" />
                     <TextBlock Margin="0,4,0,0"
-                               FontSize="11"
+                               FontSize="13"
                                Style="{StaticResource Muted}"
                                Text="JSONL, in the same format the Python probe writes, so a capture can be replayed offline by the CLI." />
 
                     <TextBlock Margin="0,10,0,0"
                                FontFamily="Consolas"
-                               FontSize="11"
+                               FontSize="13"
                                Style="{StaticResource Muted}"
                                Text="{Binding SettingsPath}"
                                TextWrapping="Wrap" />
@@ -124,4 +107,4 @@
             </Border>
         </StackPanel>
     </ScrollViewer>
-</Page>
+</UserControl>

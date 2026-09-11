@@ -36,7 +36,15 @@ public partial class App : Application
         DispatcherUnhandledException += OnDispatcherUnhandledException;
 
         var settings = new SettingsStore();
-        ThemeSupport.Apply(settings.Current.Theme);
+
+        // Must happen before any window exists: the render mode is fixed for the process.
+        if (settings.Current.SoftwareRendering)
+        {
+            System.Windows.Media.RenderOptions.ProcessRenderMode =
+                System.Windows.Interop.RenderMode.SoftwareOnly;
+        }
+
+        ThemeSupport.Apply();
 
         var builder = Host.CreateApplicationBuilder();
 
@@ -51,6 +59,10 @@ public partial class App : Application
         builder.Services.AddSingleton<TrayService>();
         builder.Services.AddHostedService<BudsHostedService>();
 
+        // One selector shared by both pages and the tray, so they cannot disagree about
+        // which noise-control mode is active or which strength was last chosen.
+        builder.Services.AddSingleton<AncSelectorViewModel>();
+
         builder.Services.AddSingleton<DashboardViewModel>();
         builder.Services.AddSingleton<SoundViewModel>();
         builder.Services.AddSingleton<ControlsViewModel>();
@@ -59,12 +71,15 @@ public partial class App : Application
         builder.Services.AddSingleton<DeveloperViewModel>();
 
         builder.Services.AddSingleton<MainWindow>();
-        builder.Services.AddTransient<DashboardPage>();
-        builder.Services.AddTransient<SoundPage>();
-        builder.Services.AddTransient<ControlsPage>();
-        builder.Services.AddTransient<DevicePage>();
-        builder.Services.AddTransient<SettingsPage>();
-        builder.Services.AddTransient<DeveloperPage>();
+
+        // Singletons: the window holds all six for its lifetime, so each keeps its scroll
+        // position and bindings between visits instead of being rebuilt on every click.
+        builder.Services.AddSingleton<DashboardPage>();
+        builder.Services.AddSingleton<SoundPage>();
+        builder.Services.AddSingleton<ControlsPage>();
+        builder.Services.AddSingleton<DevicePage>();
+        builder.Services.AddSingleton<SettingsPage>();
+        builder.Services.AddSingleton<DeveloperPage>();
 
         _host = builder.Build();
         _host.Start();
@@ -72,9 +87,19 @@ public partial class App : Application
         var window = _host.Services.GetRequiredService<MainWindow>();
         MainWindow = window;
 
-        // Creates the HWND without painting the window. The tray icon needs a parent
-        // handle, and on autostart the window is never shown — so waiting for Loaded would
-        // mean no tray icon and an app with no visible surface at all.
+        var startHidden = e.Args.Contains(AutostartService.MinimizedArgument)
+                          || settings.Current.StartMinimized;
+
+        if (!startHidden)
+        {
+            window.Show();
+        }
+
+        // EnsureHandle creates the HWND without showing anything, which is what the tray
+        // needs on the autostart path where no window is ever shown. It must run *after*
+        // Show on the normal path: creating the handle first leaves the window's content
+        // unattached, and it comes up blank -- laid out correctly, on screen, painting
+        // nothing at all.
         var handle = new WindowInteropHelper(window).EnsureHandle();
 
         _tray = _host.Services.GetRequiredService<TrayService>();
@@ -82,13 +107,10 @@ public partial class App : Application
         _tray.ShowRequested += (_, _) => ShowMainWindow();
         _tray.ExitRequested += (_, _) => Shutdown();
 
-        var startHidden = e.Args.Contains(AutostartService.MinimizedArgument)
-                          || settings.Current.StartMinimized;
-
         // Never leave the user with no way to reach the app. If Windows refused the tray
         // icon, "start minimised" would mean a running process with no visible surface and
         // no way to quit it short of Task Manager.
-        if (!startHidden || !_tray.IsRegistered)
+        if (startHidden && !_tray.IsRegistered)
         {
             window.Show();
         }

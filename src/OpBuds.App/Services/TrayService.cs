@@ -15,14 +15,19 @@ namespace OpBuds.App.Services;
 /// the app autostarts straight into the notification area.
 /// </para>
 /// <para>
-/// The ANC items are a radio group over the same option list the pages use, so the tray and
-/// the window can never offer different modes.
+/// The menu is shaped like the pages: four noise-control choices, with the four strengths
+/// tucked into a submenu under the one they belong to. It reads the same shared selector
+/// view model the window does, so the two cannot disagree about what is selected.
 /// </para>
 /// </remarks>
-public sealed class TrayService(BudsController buds, DashboardViewModel dashboard) : IDisposable
+public sealed class TrayService(
+    BudsController buds,
+    AncSelectorViewModel anc,
+    DashboardViewModel dashboard) : IDisposable
 {
     private readonly TrayIcon _icon = new();
-    private readonly Dictionary<AncMode, MenuItem> _ancItems = [];
+    private readonly Dictionary<AncGroup, MenuItem> _groupItems = [];
+    private readonly Dictionary<AncMode, MenuItem> _levelItems = [];
 
     private MenuItem? _statusItem;
 
@@ -55,18 +60,40 @@ public sealed class TrayService(BudsController buds, DashboardViewModel dashboar
         menu.Items.Add(_statusItem);
         menu.Items.Add(new Separator());
 
-        foreach (var option in DeviceOptions.Anc)
+        foreach (var option in anc.Groups)
         {
             var item = new MenuItem { Header = option.Label, IsCheckable = true };
-            var mode = option.Mode;
+            var group = option.Group;
 
-            item.Click += async (_, _) =>
+            if (group == AncGroup.NoiseCancelling)
             {
-                await buds.SetAncAsync(mode);
-                Refresh();
-            };
+                // Its strengths live under it rather than beside it, so the top level
+                // stays four choices instead of seven.
+                foreach (var level in anc.Levels)
+                {
+                    var mode = level.Mode;
+                    var child = new MenuItem { Header = level.Label, IsCheckable = true };
 
-            _ancItems[mode] = item;
+                    child.Click += async (_, _) =>
+                    {
+                        await buds.SetAncAsync(mode);
+                        Refresh();
+                    };
+
+                    _levelItems[mode] = child;
+                    item.Items.Add(child);
+                }
+            }
+            else
+            {
+                item.Click += async (_, _) =>
+                {
+                    await anc.SetGroupAsync(group);
+                    Refresh();
+                };
+            }
+
+            _groupItems[group] = item;
             menu.Items.Add(item);
         }
 
@@ -84,8 +111,8 @@ public sealed class TrayService(BudsController buds, DashboardViewModel dashboar
         exit.Click += (_, _) => ExitRequested?.Invoke(this, EventArgs.Empty);
         menu.Items.Add(exit);
 
-        // The tooltip is the only place battery shows while the window is hidden, so a
-        // refresh is forced the moment someone goes looking for it.
+        // The tooltip and the icon are the only places battery shows while the window is
+        // hidden, so a refresh is forced the moment someone goes looking for it.
         menu.Opened += async (_, _) => await buds.RefreshBatteryAsync();
 
         return menu;
@@ -94,6 +121,7 @@ public sealed class TrayService(BudsController buds, DashboardViewModel dashboar
     private void OnBudsPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName is nameof(BudsController.TrayTooltip)
+            or nameof(BudsController.LowestBudPercent)
             or nameof(BudsController.CurrentAnc)
             or nameof(BudsController.StatusText)
             or nameof(BudsController.IsConnected))
@@ -105,16 +133,22 @@ public sealed class TrayService(BudsController buds, DashboardViewModel dashboar
     private void Refresh()
     {
         _icon.SetTooltip(buds.TrayTooltip);
+        _icon.SetBattery(buds.IsConnected ? buds.LowestBudPercent : null);
 
         if (_statusItem is not null)
         {
             _statusItem.Header = buds.StatusText;
         }
 
-        foreach (var (mode, item) in _ancItems)
+        foreach (var (group, item) in _groupItems)
+        {
+            item.IsChecked = anc.CurrentGroup == group;
+            item.IsEnabled = buds.IsConnected;
+        }
+
+        foreach (var (mode, item) in _levelItems)
         {
             item.IsChecked = buds.CurrentAnc == mode;
-            item.IsEnabled = buds.IsConnected;
         }
     }
 

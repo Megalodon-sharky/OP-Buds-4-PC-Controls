@@ -105,10 +105,12 @@ public sealed partial class BudsController : ObservableObject, IAsyncDisposable
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(TrayTooltip))]
+    [NotifyPropertyChangedFor(nameof(LowestBudPercent))]
     private int? _leftPercent;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(TrayTooltip))]
+    [NotifyPropertyChangedFor(nameof(LowestBudPercent))]
     private int? _rightPercent;
 
     [ObservableProperty]
@@ -158,6 +160,21 @@ public sealed partial class BudsController : ObservableObject, IAsyncDisposable
     public string TrayTooltip => IsConnected && LeftPercent is not null
         ? $"L {LeftPercent}%  ·  R {RightPercent}%  ·  Case {(CasePercent?.ToString() ?? "—")}%"
         : StatusText;
+
+    /// <summary>
+    /// The number the tray icon shows: whichever earpiece will run out first.
+    /// </summary>
+    /// <remarks>
+    /// The case is excluded deliberately. It is usually the lowest of the three and it is
+    /// not what stops the music.
+    /// </remarks>
+    public int? LowestBudPercent => (LeftPercent, RightPercent) switch
+    {
+        ({ } left, { } right) => Math.Min(left, right),
+        ({ } left, null) => left,
+        (null, { } right) => right,
+        _ => null,
+    };
 
     public void Start()
     {

@@ -32,6 +32,13 @@
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
+
+    <!--
+      Only for the tray icon, which draws the battery percentage into a bitmap and hands
+      the shell an HICON. WPF can render the text but cannot produce an HICON, and the
+      alternative is assembling an .ico byte-for-byte at runtime.
+    -->
+    <PackageReference Include="System.Drawing.Common" Version="8.0.11" />
     <PackageReference Include="WPF-UI" Version="4.3.0" />
 
     <!--

@@ -1,3 +1,7 @@
+using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
+using System.Drawing.Text;
 using System.Runtime.InteropServices;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -95,6 +99,94 @@ public sealed class TrayIcon : IDisposable
 
         var data = Describe(NifTip, tooltip);
         ShellNotifyIcon(NimModify, ref data);
+    }
+
+    /// <summary>
+    /// Draws the battery percentage into the icon itself.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The number is painted on the app's blue badge rather than as bare white glyphs. A
+    /// tray icon has no control over the taskbar behind it, and plain white text vanishes
+    /// on a light taskbar; a filled badge reads on either.
+    /// </para>
+    /// <para>
+    /// Passing null restores the plain app icon — that is what "no reading" looks like,
+    /// rather than a stale number that is quietly wrong.
+    /// </para>
+    /// </remarks>
+    public void SetBattery(int? percent)
+    {
+        if (!IsRegistered)
+        {
+            return;
+        }
+
+        var replacement = percent is { } value ? RenderPercent(value) : LoadExecutableIcon();
+        if (replacement == IntPtr.Zero)
+        {
+            return;
+        }
+
+        var previous = _icon;
+        _icon = replacement;
+
+        var data = Describe(NifIcon, string.Empty);
+        ShellNotifyIcon(NimModify, ref data);
+
+        // Only after the shell has taken the new one: destroying the icon it is still
+        // drawing leaves an empty slot in the notification area.
+        if (previous != IntPtr.Zero)
+        {
+            DestroyIcon(previous);
+        }
+    }
+
+    private static IntPtr RenderPercent(int percent)
+    {
+        using var bitmap = new Bitmap(32, 32, PixelFormat.Format32bppArgb);
+        using var canvas = Graphics.FromImage(bitmap);
+
+        canvas.SmoothingMode = SmoothingMode.AntiAlias;
+        canvas.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+        canvas.Clear(Color.Transparent);
+
+        using (var badge = new SolidBrush(Color.FromArgb(255, 47, 111, 235)))
+        using (var shape = RoundedSquare(32, 7))
+        {
+            canvas.FillPath(badge, shape);
+        }
+
+        var text = Math.Clamp(percent, 0, 100).ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+        // Three digits need a smaller face or "100" runs off both edges.
+        var size = text.Length >= 3 ? 14f : 21f;
+
+        using var font = new Font("Segoe UI", size, FontStyle.Bold, GraphicsUnit.Pixel);
+        using var ink = new SolidBrush(Color.White);
+        using var layout = new StringFormat
+        {
+            Alignment = StringAlignment.Center,
+            LineAlignment = StringAlignment.Center,
+        };
+
+        canvas.DrawString(text, font, ink, new RectangleF(0, 0, 32, 32), layout);
+
+        return bitmap.GetHicon();
+    }
+
+    private static GraphicsPath RoundedSquare(int side, int radius)
+    {
+        var diameter = radius * 2;
+        var path = new GraphicsPath();
+
+        path.AddArc(0, 0, diameter, diameter, 180, 90);
+        path.AddArc(side - diameter, 0, diameter, diameter, 270, 90);
+        path.AddArc(side - diameter, side - diameter, diameter, diameter, 0, 90);
+        path.AddArc(0, side - diameter, diameter, diameter, 90, 90);
+        path.CloseFigure();
+
+        return path;
     }
 
     private NotifyIconData Describe(uint flags, string tooltip) => new()

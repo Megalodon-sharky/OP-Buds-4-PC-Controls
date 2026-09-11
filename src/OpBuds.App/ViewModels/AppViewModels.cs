@@ -2,39 +2,57 @@ using System.Globalization;
 using System.IO;
 using System.Windows;
 using System.Windows.Data;
+using System.Windows.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using OpBuds.App.Services;
 using OpBuds.Protocol.Model;
 using OpBuds.Protocol.Profiles;
+using Wpf.Ui.Appearance;
 
 namespace OpBuds.App.ViewModels;
 
-/// <summary>One selectable ANC mode, with the label the phone's UI would use.</summary>
-public sealed record AncOption(AncMode Mode, string Label);
+/// <summary>
+/// What the user picks, as opposed to what the device stores.
+/// </summary>
+/// <remarks>
+/// The firmware has seven ANC states, four of which are strengths of the same thing. The
+/// phone does not offer seven buttons and neither does this: noise cancellation is one
+/// choice, and its strength is a second, smaller one that only exists once it is selected.
+/// </remarks>
+public enum AncGroup
+{
+    Off,
+    Transparency,
+    Adaptive,
+    NoiseCancelling,
+}
+
+public sealed record AncGroupOption(AncGroup Group, string Label);
+
+public sealed record AncLevelOption(AncMode Mode, string Label);
 
 /// <summary>One selectable EQ preset.</summary>
 public sealed record EqOption(EqPreset Preset, string Label);
 
-/// <summary>
-/// Shared option lists, so the dashboard's compact picker and the sound page's full list
-/// cannot drift apart.
-/// </summary>
+/// <summary>Shared option lists, so no two screens can drift apart.</summary>
 public static class DeviceOptions
 {
-    /// <remarks>
-    /// All seven are confirmed by write-and-read-back. The phone's single "Noise
-    /// Cancellation" button maps to <see cref="AncMode.NoiseCancellingHigh"/>.
-    /// </remarks>
-    public static IReadOnlyList<AncOption> Anc { get; } =
+    public static IReadOnlyList<AncGroupOption> AncGroups { get; } =
     [
-        new(AncMode.Off, "Off"),
-        new(AncMode.Transparency, "Transparency"),
-        new(AncMode.Adaptive, "Adaptive"),
-        new(AncMode.NoiseCancellingHigh, "Noise cancelling — high"),
-        new(AncMode.NoiseCancellingModerate, "Noise cancelling — moderate"),
-        new(AncMode.NoiseCancellingLow, "Noise cancelling — low"),
-        new(AncMode.NoiseCancellingAuto, "Noise cancelling — auto"),
+        new(AncGroup.Off, "Off"),
+        new(AncGroup.Transparency, "Transparency"),
+        new(AncGroup.Adaptive, "Adaptive"),
+        new(AncGroup.NoiseCancelling, "Noise cancellation"),
+    ];
+
+    /// <remarks>All four confirmed by writing the 16-bit form and reading the mode back.</remarks>
+    public static IReadOnlyList<AncLevelOption> AncLevels { get; } =
+    [
+        new(AncMode.NoiseCancellingAuto, "Auto"),
+        new(AncMode.NoiseCancellingLow, "Low"),
+        new(AncMode.NoiseCancellingModerate, "Moderate"),
+        new(AncMode.NoiseCancellingHigh, "High"),
     ];
 
     /// <remarks>
@@ -49,17 +67,109 @@ public static class DeviceOptions
         new(EqPreset.Bass, "Bass"),
         new(EqPreset.Custom, "Custom profile"),
     ];
+
+    public static bool IsLevel(AncMode mode) =>
+        AncLevels.Any(level => level.Mode == mode);
+
+    public static AncGroup GroupOf(AncMode? mode) => mode switch
+    {
+        AncMode.Transparency => AncGroup.Transparency,
+        AncMode.Adaptive => AncGroup.Adaptive,
+        not null when IsLevel(mode.Value) => AncGroup.NoiseCancelling,
+        _ => AncGroup.Off,
+    };
 }
 
-/// <summary>Connection, battery, wear, quick ANC, and find.</summary>
-public sealed partial class DashboardViewModel(BudsController buds) : ObservableObject
+/// <summary>
+/// The noise-control picker: four choices, plus a strength dropdown that only exists when
+/// noise cancellation is the choice.
+/// </summary>
+/// <remarks>
+/// One instance is shared by every screen and the tray, so the window and the tray menu
+/// cannot disagree about what is selected.
+/// </remarks>
+public sealed partial class AncSelectorViewModel : ObservableObject
+{
+    /// <summary>
+    /// The strength to restore when noise cancellation is re-selected.
+    /// </summary>
+    /// <remarks>
+    /// Without this, picking "Noise cancellation" would have to guess a strength every
+    /// time, and each guess is an audible switch.
+    /// </remarks>
+    private AncMode _preferredLevel = AncMode.NoiseCancellingHigh;
+
+    public AncSelectorViewModel(BudsController buds)
+    {
+        Buds = buds;
+        buds.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName != nameof(BudsController.CurrentAnc))
+            {
+                return;
+            }
+
+            if (buds.CurrentAnc is { } mode && DeviceOptions.IsLevel(mode))
+            {
+                _preferredLevel = mode;
+            }
+
+            OnPropertyChanged(nameof(CurrentGroup));
+            OnPropertyChanged(nameof(IsNoiseCancelling));
+            OnPropertyChanged(nameof(SelectedLevel));
+        };
+    }
+
+    public BudsController Buds { get; }
+
+    public IReadOnlyList<AncGroupOption> Groups => DeviceOptions.AncGroups;
+
+    public IReadOnlyList<AncLevelOption> Levels => DeviceOptions.AncLevels;
+
+    public AncGroup CurrentGroup => DeviceOptions.GroupOf(Buds.CurrentAnc);
+
+    public bool IsNoiseCancelling => CurrentGroup == AncGroup.NoiseCancelling;
+
+    /// <summary>Two-way for the dropdown. Setting it writes to the device.</summary>
+    public AncLevelOption? SelectedLevel
+    {
+        get
+        {
+            var mode = Buds.CurrentAnc is { } current && DeviceOptions.IsLevel(current)
+                ? current
+                : _preferredLevel;
+
+            return Levels.FirstOrDefault(level => level.Mode == mode);
+        }
+
+        set
+        {
+            if (value is null || value.Mode == Buds.CurrentAnc)
+            {
+                return;
+            }
+
+            _preferredLevel = value.Mode;
+            _ = Buds.SetAncAsync(value.Mode);
+        }
+    }
+
+    [RelayCommand]
+    public Task SetGroupAsync(AncGroup group) => Buds.SetAncAsync(group switch
+    {
+        AncGroup.Transparency => AncMode.Transparency,
+        AncGroup.Adaptive => AncMode.Adaptive,
+        AncGroup.NoiseCancelling => _preferredLevel,
+        _ => AncMode.Off,
+    });
+}
+
+/// <summary>Connection, battery, wear, noise control, and find.</summary>
+public sealed partial class DashboardViewModel(BudsController buds, AncSelectorViewModel anc) : ObservableObject
 {
     public BudsController Buds { get; } = buds;
 
-    public IReadOnlyList<AncOption> AncOptions => DeviceOptions.Anc;
-
-    [RelayCommand]
-    private Task SetAncAsync(AncMode mode) => Buds.SetAncAsync(mode);
+    public AncSelectorViewModel Anc { get; } = anc;
 
     [RelayCommand]
     private Task RefreshAsync() => Buds.RefreshBatteryAsync();
@@ -90,17 +200,14 @@ public sealed partial class DashboardViewModel(BudsController buds) : Observable
     }
 }
 
-/// <summary>ANC in full, EQ presets, BassWave and any saved custom profiles.</summary>
-public sealed partial class SoundViewModel(BudsController buds) : ObservableObject
+/// <summary>Noise control, EQ presets, BassWave and any saved custom profiles.</summary>
+public sealed partial class SoundViewModel(BudsController buds, AncSelectorViewModel anc) : ObservableObject
 {
     public BudsController Buds { get; } = buds;
 
-    public IReadOnlyList<AncOption> AncOptions => DeviceOptions.Anc;
+    public AncSelectorViewModel Anc { get; } = anc;
 
     public IReadOnlyList<EqOption> EqOptions => DeviceOptions.Eq;
-
-    [RelayCommand]
-    private Task SetAncAsync(AncMode mode) => Buds.SetAncAsync(mode);
 
     [RelayCommand]
     private Task SetEqAsync(EqPreset preset) => Buds.SetEqPresetAsync(preset);
@@ -116,22 +223,14 @@ public sealed class ControlsViewModel(BudsController buds)
     /// </summary>
     /// <remarks>
     /// The setter command ids for touch, custom EQ and the misc switches are still inherited
-    /// Buds Pro 3 guesses and have never been transmitted to this hardware. The project rule
+    /// Buds Pro 3 guesses that have never been transmitted to this hardware. The project rule
     /// is that the <c>0x04xx</c> space is never fuzzed, because an unknown setter could be a
     /// factory reset or DFU entry. So these read, and only read.
     /// </remarks>
     public string ReadOnlyReason =>
-        "These are read-only. Their setter command ids are still inherited from the Buds " +
-        "Pro 3 and have never been sent to this hardware — and an unverified command in the " +
-        "0x04xx space could be a factory reset or a firmware-update trigger, so it is not " +
-        "guessed at.";
-
-    /// <summary>The one misc id whose meaning is actually known.</summary>
-    public static string DescribeMisc(MiscFeature feature) => feature.Id switch
-    {
-        0x1D => $"0x{feature.Id:X2}  BassWave",
-        _ => $"0x{feature.Id:X2}  (unnamed)",
-    };
+        "Read-only. These setter command ids are still inherited from the Buds Pro 3 and " +
+        "have never been sent to this hardware — an unverified command in the 0x04xx space " +
+        "could be a factory reset, so it is not guessed at.";
 }
 
 /// <summary>Identity, firmware, peers, and what is deliberately absent.</summary>
@@ -184,16 +283,11 @@ public sealed partial class SettingsViewModel : ObservableObject
         _protocolLogging = store.Current.ProtocolLogging;
         _pollSecondsVisible = store.Current.PollSecondsVisible;
         _deviceMac = store.Current.DeviceMac;
-        _theme = store.Current.Theme;
     }
 
     public BudsController Buds { get; }
 
     public string SettingsPath => _store.FilePath;
-
-    public static string LogDirectory => SettingsStore.LogDirectory;
-
-    public IReadOnlyList<string> Themes { get; } = ["system", "light", "dark"];
 
     [ObservableProperty]
     private bool _startWithWindows;
@@ -212,9 +306,6 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     [ObservableProperty]
     private string _deviceMac;
-
-    [ObservableProperty]
-    private string _theme;
 
     /// <summary>Set when a change needs a restart to take effect, so the UI can say so.</summary>
     [ObservableProperty]
@@ -255,12 +346,6 @@ public sealed partial class SettingsViewModel : ObservableObject
     {
         _store.Update(settings => settings with { DeviceMac = value.Trim() });
         RestartRequired = true;
-    }
-
-    partial void OnThemeChanged(string value)
-    {
-        _store.Update(settings => settings with { Theme = value });
-        ThemeSupport.Apply(value);
     }
 
     [RelayCommand]
@@ -313,26 +398,24 @@ public sealed partial class DeveloperViewModel(BudsController buds) : Observable
     private void Clear() => Buds.Traffic.Clear();
 }
 
-/// <summary>Applies the stored theme choice.</summary>
+/// <summary>
+/// Puts the app in dark mode and keeps it there.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Dark only, on purpose. The app's text is literal white, so a light surface would make
+/// every label invisible — which is exactly what happened when the theme was allowed to
+/// follow the system: the window laid out perfectly and painted nothing.
+/// </para>
+/// <para>
+/// Following the system properly means recolouring text with the theme, and WPF-UI rewrites
+/// the very brushes that would carry that colour whenever its theme manager runs. Until
+/// that is worth solving, one theme that always works beats two that sometimes do.
+/// </para>
+/// </remarks>
 public static class ThemeSupport
 {
-    public static void Apply(string theme)
-    {
-        switch (theme)
-        {
-            case "light":
-                Wpf.Ui.Appearance.ApplicationThemeManager.Apply(
-                    Wpf.Ui.Appearance.ApplicationTheme.Light);
-                break;
-            case "dark":
-                Wpf.Ui.Appearance.ApplicationThemeManager.Apply(
-                    Wpf.Ui.Appearance.ApplicationTheme.Dark);
-                break;
-            default:
-                Wpf.Ui.Appearance.ApplicationThemeManager.ApplySystemTheme();
-                break;
-        }
-    }
+    public static void Apply() => ApplicationThemeManager.Apply(ApplicationTheme.Dark);
 }
 
 /// <summary>True when the bound value equals the converter parameter. Drives radio groups.</summary>
@@ -383,7 +466,7 @@ public sealed class HasValueConverter : IValueConverter
 public sealed class PercentConverter : IValueConverter
 {
     public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
-        value is int percent ? $"{percent}%" : "—";
+        value is int percent ? $"{percent}" : "—";
 
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
         Binding.DoNothing;

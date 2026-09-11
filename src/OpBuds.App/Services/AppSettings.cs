@@ -47,6 +47,25 @@ public sealed record AppSettings
     /// <summary>Writes a JSONL capture of every frame to the logs directory.</summary>
     public bool ProtocolLogging { get; init; }
 
+    /// <summary>
+    /// Draw with WPF's software renderer instead of the GPU. On by default.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Not a micro-optimisation in reverse — it is insurance against a total blank. When
+    /// WPF's hardware pipeline gets into a bad state (a driver reset will do it), every
+    /// window in the process paints nothing at all: correct layout, correct automation
+    /// tree, zero pixels. That was observed on this machine mid-development, and it hit an
+    /// already-committed build that had rendered perfectly an hour earlier.
+    /// </para>
+    /// <para>
+    /// This window is 470x720 with no animation, so the software renderer is
+    /// indistinguishable in use — and a slightly cheaper redraw is a good trade against a
+    /// failure mode where the app appears to be broken and offers no clue why.
+    /// </para>
+    /// </remarks>
+    public bool SoftwareRendering { get; init; } = true;
+
     /// <summary>"system", "light" or "dark".</summary>
     public string Theme { get; init; } = "system";
 }
