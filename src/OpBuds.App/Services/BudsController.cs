@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using OpBuds.Core.Diagnostics;
 using OpBuds.Core.Session;
 using OpBuds.Core.Transport;
+using OpBuds.Protocol.Codecs;
 using OpBuds.Protocol.Framing;
 using OpBuds.Protocol.Model;
 using OpBuds.Protocol.Profiles;
@@ -42,7 +43,16 @@ public sealed partial class BudsController : ObservableObject, IAsyncDisposable
     private readonly SemaphoreSlim _device = new(1, 1);
     private readonly CancellationTokenSource _lifetime = new();
 
+    /// <summary>BassWave's on/off switch in the misc feature list.</summary>
+    private const byte BassWaveFeatureId = 0x1D;
+
     private int _refreshQueued;
+
+    /// <summary>
+    /// The touch table exactly as last read, so a gesture write can be checked byte for byte.
+    /// </summary>
+    /// <remarks>Only touched inside the device gate.</remarks>
+    private TouchConfiguration? _touchConfiguration;
 
     public BudsController(SettingsStore settings, Action<Action>? post = null)
     {
@@ -145,6 +155,7 @@ public sealed partial class BudsController : ObservableObject, IAsyncDisposable
     private IReadOnlyList<ConnectedDevice> _peers = [];
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(BassWaveSwitchOn))]
     private IReadOnlyList<MiscFeature> _miscFeatures = [];
 
     [ObservableProperty]
@@ -175,6 +186,18 @@ public sealed partial class BudsController : ObservableObject, IAsyncDisposable
         (null, { } right) => right,
         _ => null,
     };
+
+    /// <summary>
+    /// The earbuds' own BassWave switch (misc feature <c>0x1D</c>), or null until read.
+    /// </summary>
+    /// <remarks>
+    /// The level is stored either way but only heard while this is on, so the Sound page says
+    /// so rather than offering a slider that silently does nothing.
+    /// </remarks>
+    public bool? BassWaveSwitchOn => MiscFeatures
+        .Where(feature => feature.Id == BassWaveFeatureId)
+        .Select(feature => (bool?)feature.Enabled)
+        .FirstOrDefault();
 
     public void Start()
     {
@@ -224,6 +247,92 @@ public sealed partial class BudsController : ObservableObject, IAsyncDisposable
         return readback == preset;
     }
 
+    /// <summary>Sets the BassWave level; true when the device reads back that level.</summary>
+    public async Task<bool> SetBassWaveAsync(int level)
+    {
+        if (BassWave is not { } bounds)
+        {
+            return false;
+        }
+
+        BassWaveState? readback;
+        try
+        {
+            readback = await WithDeviceValueAsync(client => client.SetBassWaveAsync(bounds, level, _lifetime.Token))
+                .ConfigureAwait(false);
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            SetError($"BassWave level {level} is outside the range the earbuds report.");
+            return false;
+        }
+
+        if (readback is null)
+        {
+            SetError("The earbuds did not confirm the BassWave change.");
+            return false;
+        }
+
+        _post(() => BassWave = readback);
+        return readback.Value.Current == level;
+    }
+
+    /// <summary>
+    /// Re-points one gesture. True only when exactly that one byte changed on the device.
+    /// </summary>
+    /// <remarks>
+    /// The whole table is read back and compared with the one read before the write, on raw
+    /// bytes. A write that also moved some other gesture is reported, not glossed over.
+    /// </remarks>
+    public async Task<bool> SetTouchActionAsync(TouchBinding binding, byte action)
+    {
+        TouchWrite? outcome;
+        try
+        {
+            outcome = await WithDeviceAsync(async client =>
+            {
+                if (_touchConfiguration is not { } before)
+                {
+                    return null;
+                }
+
+                var after = await client.SetTouchActionAsync(before, binding, action, _lifetime.Token)
+                    .ConfigureAwait(false);
+
+                if (after is null)
+                {
+                    return null;
+                }
+
+                _touchConfiguration = after;
+                return new TouchWrite(before, after);
+            }).ConfigureAwait(false);
+        }
+        catch (ArgumentException)
+        {
+            // The table was re-read between the page drawing and the click, and this
+            // gesture is no longer in it. Refusing is the codec doing its job.
+            SetError("That gesture changed on the earbuds before the write. Try again.");
+            return false;
+        }
+
+        if (outcome is null)
+        {
+            SetError("The earbuds did not confirm the gesture change.");
+            return false;
+        }
+
+        _post(() => TouchBindings = outcome.After.Bindings);
+
+        if (!TouchCodec.IsExactlyOneEdit(outcome.Before, outcome.After, binding, action))
+        {
+            SetError("The gesture table read back differently than expected — compare the Controls page with your phone.");
+            return false;
+        }
+
+        return true;
+    }
+
     /// <summary>Rings the buds. The tone self-terminates; there is no stop command.</summary>
     public async Task<bool> FindAsync(FindTarget target)
     {
@@ -247,6 +356,11 @@ public sealed partial class BudsController : ObservableObject, IAsyncDisposable
             var touch = await client.GetTouchConfigAsync(_lifetime.Token).ConfigureAwait(false);
             var peers = await client.GetConnectedDevicesAsync(_lifetime.Token).ConfigureAwait(false);
             var misc = await client.GetMiscFeaturesAsync(_lifetime.Token).ConfigureAwait(false);
+
+            if (touch is not null)
+            {
+                _touchConfiguration = touch;
+            }
 
             _post(() =>
             {
@@ -401,9 +515,12 @@ public sealed partial class BudsController : ObservableObject, IAsyncDisposable
             }
         }
 
-        if (readout.Wear.Count > 0)
+        // The case reports a wear entry too, but it is never worn: listing it produced
+        // "Case in case". Its battery already has a place of its own.
+        var buds = readout.Wear.Where(state => state.Side != BudSide.Case).ToArray();
+        if (buds.Length > 0)
         {
-            WearText = string.Join("  ·  ", readout.Wear.Select(Describe));
+            WearText = string.Join("  ·  ", buds.Select(Describe));
         }
 
         // The only evidence available for telling a case cycle from a real disconnect.
@@ -459,6 +576,8 @@ public sealed partial class BudsController : ObservableObject, IAsyncDisposable
     });
 
     private void SetError(string message) => _post(() => LastError = message);
+
+    private sealed record TouchWrite(TouchConfiguration Before, TouchConfiguration After);
 
     public async ValueTask DisposeAsync()
     {

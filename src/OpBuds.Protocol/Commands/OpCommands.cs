@@ -32,7 +32,11 @@ public static class OpCommands
     /// <summary>Find device. Payload is a count-prefixed id list: <c>01 01</c> = left.</summary>
     public const byte FindDeviceSet = 0x00;
 
-    /// <summary>CONFIDENCE: assumed-pro3. Never transmitted.</summary>
+    /// <summary>
+    /// CONFIDENCE: confirmed 2026-09-23. <c>[count=1][side][type][gesture][action]</c>: one
+    /// re-pointed record changed exactly one byte of the <c>0x0108</c> table and nothing else
+    /// in the readable command space. See <see cref="Codecs.TouchCodec"/>.
+    /// </summary>
     public const byte TouchConfigSet = 0x01;
 
     /// <summary>CONFIDENCE: assumed-pro3. Never transmitted.</summary>
@@ -47,7 +51,11 @@ public static class OpCommands
     /// <summary>CONFIDENCE: assumed-pro3. Never transmitted.</summary>
     public const byte CustomEqSet = 0x18;
 
-    /// <summary>CONFIDENCE: assumed-pro3. Never transmitted.</summary>
+    /// <summary>
+    /// CONFIDENCE: confirmed 2026-09-23. <c>[min][max][level]</c>, signed: moved the level one
+    /// step and back, and nothing but <c>0x0124</c> changed. See
+    /// <see cref="Codecs.BassWaveCodec"/>.
+    /// </summary>
     public const byte BassWaveSet = 0x1B;
 
     // --- Notifications ----------------------------------------------------

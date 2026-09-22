@@ -3,23 +3,106 @@
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml">
 
-    <ScrollViewer Padding="16,4,16,16" VerticalScrollBarVisibility="Auto">
+    <UserControl.Resources>
+        <!--
+            One line per option. The app-wide TextBlock style wraps, which in a dropdown this
+            narrow split "Previous track" over two lines.
+        -->
+        <DataTemplate x:Key="ActionOption">
+            <TextBlock Text="{Binding Label}"
+                       TextTrimming="CharacterEllipsis"
+                       TextWrapping="NoWrap" />
+        </DataTemplate>
+    </UserControl.Resources>
+
+    <ScrollViewer Padding="14,4,14,16" VerticalScrollBarVisibility="Auto">
         <StackPanel>
 
             <ui:InfoBar Margin="0,0,0,12"
                         IsClosable="False"
-                        IsOpen="True"
-                        Message="{Binding ReadOnlyReason}"
-                        Severity="Informational"
-                        Title="Read-only" />
+                        IsOpen="{Binding Buds.LastError, Mode=OneWay, Converter={StaticResource HasValue}}"
+                        Message="{Binding Buds.LastError, Mode=OneWay}"
+                        Severity="Error"
+                        Title="Last error" />
 
+            <!--
+                One row per gesture, one dropdown per earbud. Each change is written as a single
+                record, then the whole table is read back and compared byte for byte with the
+                one read before: only that one gesture may differ.
+            -->
             <TextBlock Style="{StaticResource SectionHeader}" Text="TOUCH GESTURES" />
-            <Border Margin="0,0,0,12"
-                    Padding="14"
-                    Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
-                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
-                    BorderThickness="1"
-                    CornerRadius="8">
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <!--
+                        The gesture name sits on its own line so both dropdowns get the full
+                        card width: beside a label column they were too narrow for their text.
+                    -->
+                    <Grid Margin="0,0,0,2">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock FontSize="13"
+                                   Style="{StaticResource Muted}"
+                                   Text="LEFT" />
+                        <TextBlock Grid.Column="1"
+                                   Margin="8,0,0,0"
+                                   FontSize="13"
+                                   Style="{StaticResource Muted}"
+                                   Text="RIGHT" />
+                    </Grid>
+
+                    <ItemsControl ItemsSource="{Binding Gestures}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="0,6,0,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock Grid.ColumnSpan="2"
+                                               Margin="0,0,0,6"
+                                               FontWeight="SemiBold"
+                                               Text="{Binding Label}" />
+
+                                    <ComboBox Grid.Row="1"
+                                              Margin="0,0,4,0"
+                                              HorizontalAlignment="Stretch"
+                                              AutomationProperties.Name="{Binding Label, StringFormat='{}{0}, left earbud'}"
+                                              IsEnabled="{Binding Left.CanEdit, Mode=OneWay}"
+                                              ItemTemplate="{StaticResource ActionOption}"
+                                              ItemsSource="{Binding Left.Options, Mode=OneWay}"
+                                              SelectedItem="{Binding Left.Selected, Mode=TwoWay}" />
+
+                                    <ComboBox Grid.Row="1"
+                                              Grid.Column="1"
+                                              Margin="4,0,0,0"
+                                              HorizontalAlignment="Stretch"
+                                              AutomationProperties.Name="{Binding Label, StringFormat='{}{0}, right earbud'}"
+                                              IsEnabled="{Binding Right.CanEdit, Mode=OneWay}"
+                                              ItemTemplate="{StaticResource ActionOption}"
+                                              ItemsSource="{Binding Right.Options, Mode=OneWay}"
+                                              SelectedItem="{Binding Right.Selected, Mode=TwoWay}" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <TextBlock Margin="0,10,0,0"
+                               FontSize="13"
+                               Style="{StaticResource Muted}"
+                               Text="Each change is written to the earbuds and the whole gesture table is read back to confirm it. Only actions this pair already uses are offered." />
+                </StackPanel>
+            </Border>
+
+            <!--  Everything the matrix does not offer, exactly as read.  -->
+            <TextBlock Style="{StaticResource SectionHeader}" Text="OTHER GESTURES" />
+            <Border Style="{StaticResource Card}">
                 <StackPanel>
                     <Grid Margin="0,0,0,6">
                         <Grid.ColumnDefinitions>
@@ -43,7 +126,7 @@
                                    Text="ACTION" />
                     </Grid>
 
-                    <ItemsControl ItemsSource="{Binding Buds.TouchBindings, Mode=OneWay}">
+                    <ItemsControl ItemsSource="{Binding OtherBindings, Mode=OneWay}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <Grid Margin="0,1">
@@ -71,24 +154,15 @@
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
 
-                    <!--
-                        Gesture and action numbers are shown raw because that is all that is
-                        known. Naming them would mean inventing a mapping, and an invented
-                        label is worse than an honest hex value.
-                    -->
                     <TextBlock Margin="0,8,0,0"
                                FontSize="13"
                                Style="{StaticResource Muted}"
-                               Text="Context 0x01 carries six gestures and 0x06 only three, consistent with 0x06 being the in-call context. The gesture and action numbers have not been mapped to names, so they are shown as read." />
+                               Text="Shown as read, not offered: the single press, two gestures whose meaning on this model is unconfirmed, and context 0x06, which looks like the in-call set." />
                 </StackPanel>
             </Border>
 
             <TextBlock Style="{StaticResource SectionHeader}" Text="FEATURE SWITCHES" />
-            <Border Padding="14"
-                    Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
-                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
-                    BorderThickness="1"
-                    CornerRadius="8">
+            <Border Style="{StaticResource Card}">
                 <StackPanel>
                     <ItemsControl ItemsSource="{Binding Buds.MiscFeatures, Mode=OneWay}">
                         <ItemsControl.ItemTemplate>
@@ -124,10 +198,15 @@
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
 
+                    <!--
+                        Still read-only. The switch setter has not been verified on this
+                        hardware, and the Buds Pro 3's payload for it disagrees with the pattern
+                        every confirmed Buds 4 setter follows, so it would be a guess.
+                    -->
                     <TextBlock Margin="0,8,0,0"
                                FontSize="13"
                                Style="{StaticResource Muted}"
-                               Text="Seventeen switches exist on this unit and only 0x1D has been identified. The list is read in pages of fifteen ids, because the reply truncates at thirty-two bytes and reports the truncated count as if it were real." />
+                               Text="Read-only. Seventeen switches exist on this unit and only 0x1D (BassWave) is identified. The list is read in pages of fifteen ids, because the reply truncates at thirty-two bytes and reports the truncated count as if it were real." />
                 </StackPanel>
             </Border>
         </StackPanel>

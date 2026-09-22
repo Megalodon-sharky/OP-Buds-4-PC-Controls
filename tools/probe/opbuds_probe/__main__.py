@@ -259,6 +259,8 @@ def cmd_set_probe(args) -> int:
             print("  Take them OUT OF YOUR EARS before running this. The find-device")
             print("  tone is designed to be heard across a room, not from inside your")
             print("  ear canal.")
+        elif tier == "TOUCH":
+            print("  Nothing audible: one gesture is reassigned, read back, and put back.")
         else:
             print("  Earbuds should be in your ears so you can hear each change.")
         print("\n  Re-run with --i-understand-the-risk to proceed.")
@@ -512,7 +514,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     sp = sub.add_parser("set-probe", help="tiered SET probing with snapshot and restore")
     add_common(sp)
-    sp.add_argument("--tier", required=True, help="A (find device), B (ANC), C (EQ presets)")
+    sp.add_argument("--tier", required=True,
+                    help="A (find device), B (ANC), C (EQ presets), "
+                         "BASS (BassWave level), TOUCH (touch config)")
     sp.add_argument("--i-understand-the-risk", action="store_true")
     sp.set_defaults(func=cmd_set_probe)
 

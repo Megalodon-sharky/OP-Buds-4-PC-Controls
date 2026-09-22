@@ -676,6 +676,58 @@ real DSP curve is **unknown** -- audible effect was not tested.
 Consequence for the app: **validate preset ids client-side.** The device will not do it for
 you, and a stored out-of-range preset may leave the phone's own UI showing no selection.
 
+### The rule: a setter takes its getter's reply minus the status byte `confirmed`
+
+Every setter confirmed on this hardware that has a getter follows it:
+
+| Setter | Getter reply | Set payload |
+|---|---|---|
+| `0x0406` EQ preset | `[status][preset]` | `[preset]` |
+| `0x0404` ANC | `[status][count][id][lo][hi]` | `[count][id][lo][hi]` |
+| `0x041B` BassWave | `[status][min][max][current]` | `[min][max][level]` |
+| `0x0401` touch | `[status][count]` + records | `[count]` + the record(s) being changed |
+
+It predicted both Tier D payloads **before either was sent**, and each worked on its first
+transmission. Worth trying first on any setter still unmapped — the custom EQ upload is the
+obvious next candidate.
+
+### `0x041B` -- BassWave level (Tier D) `confirmed`
+
+```
+[min] [max] [level]        all signed; min and max echoed from the 0x0124 reply
+ fb    05    04            ->  level +4
+```
+
+Measured 2026-09-23: `fb 05 04` acked `00`, `0x0124` read back `00 fb 05 04`, and a read of
+every responding command id before and after showed **only `0x0124` changed**. Restored with
+`fb 05 05`. The same bytes as the Buds Pro 3, and byte for byte the body of the `0x0508` push.
+
+No `0x0508` push arrived for this PC's own write within a second, though one does when the
+phone moves the slider. Pushes may go only to the *other* peers. Confirm by readback.
+
+The level is stored whether or not BassWave's own switch (misc feature `0x1D`) is on; it is
+only heard while the switch is on. Switching it is a misc-config write, which is not mapped.
+
+### `0x0401` -- touch config (Tier D) `confirmed`
+
+```
+[count] [side] [type] [gesture] [action]
+  01      02     01      02        05       right, playback, double press -> previous
+```
+
+One record of the `0x0108` reply behind a count. Measured 2026-09-23: acked `00`, and the
+table read back differed from the original in **exactly one byte** (offset 33, `06 -> 05`),
+with nothing else changed anywhere in the readable command space. Restored with the same
+shape; the table then matched the original byte for byte. Gadgetbridge's Oppo encoding is
+the same five bytes: its 16-bit gesture codes (`0x0201` double, `0x0301` triple, `0x0401`
+hold) are little-endian `[type][gesture]`.
+
+Action ids, named from the Oppo family and consistent with this unit's defaults: `00`
+nothing, `01` play/pause, `03` voice assistant, `05` previous, `06` next, `08` noise control.
+`07` (gesture `05`) and the context-`06` actions `1C`/`1D` are unnamed. The app offers only
+actions this unit already stores, re-points only double/triple/hold in context `01`, and
+checks every write by comparing the whole table byte for byte.
+
 ### Safety rules that stay in force
 
 * The `0x04xx` space is **never** fuzzed. Only ids on an explicit allowlist are transmitted.
@@ -687,6 +739,8 @@ you, and a stored out-of-range preset may leave the phone's own UI showing no se
 
 ### Still never attempted
 
-Custom EQ upload (`0x0422`?), touch remapping, and misc-config writes. The custom EQ and
-touch payloads are both fully decoded on the read side, so the remaining unknown is the
-setter command id and whether the write echoes the read layout.
+Custom EQ upload and misc-config writes (which include BassWave's on/off switch). The
+custom EQ payload is fully decoded on the read side, and the reply-minus-status rule above
+predicts its write layout. Misc config is less clear-cut: the Buds Pro 3 sends
+`[featureId][value]` with no count, while the rule predicts `[count][featureId][value]`, so
+that one needs the same Tier D treatment before anything depends on it.

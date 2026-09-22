@@ -6,9 +6,10 @@ namespace OpBuds.Protocol.Codecs;
 /// A parsed touch configuration, retaining the exact bytes it was decoded from.
 /// </summary>
 /// <remarks>
-/// <see cref="RawPayload"/> exists so a write-back can replay the original bytes verbatim
-/// with only the intended record edited. Reconstructing the whole table from the model would
-/// silently normalise any field this decoder does not yet understand.
+/// <see cref="RawPayload"/> exists so a write can be checked byte for byte: after re-pointing
+/// one gesture, the table read back must equal this one with exactly that byte changed.
+/// Comparing models instead would miss a change to any field this decoder does not yet
+/// understand.
 /// </remarks>
 public sealed record TouchConfiguration(
     IReadOnlyList<TouchBinding> Bindings,
@@ -48,32 +49,63 @@ public static class TouchCodec
     }
 
     /// <summary>
-    /// Produces a write payload by editing one record inside the bytes that were read.
+    /// Builds the <c>0x0401</c> payload that re-points one gesture:
+    /// <c>[count=1][side][type][gesture][action]</c>.
     /// </summary>
     /// <remarks>
-    /// Deliberately takes the original payload rather than a model: everything not being
-    /// changed is copied through untouched.
+    /// <para>
+    /// One record of the <c>0x0108</c> reply behind a count — the getter's reply minus its
+    /// status byte, cut down to the record being changed. That is the same shape as the
+    /// confirmed ANC setter, and the same encoding Gadgetbridge uses for the Oppo family.
+    /// </para>
+    /// <para>
+    /// Side, context and gesture must come from a binding that was read from the device; only
+    /// the action is new. So a write can re-point a gesture the firmware reported, and can
+    /// never invent one — and because nothing else is sent, nothing else can be normalised.
+    /// </para>
     /// </remarks>
-    public static byte[] BuildSetFrom(
-        TouchConfiguration original,
-        BudSide side,
-        byte contextType,
-        byte gesture,
+    public static byte[] BuildSet(TouchConfiguration current, TouchBinding binding, byte action)
+    {
+        if (!current.Bindings.Contains(binding))
+        {
+            throw new ArgumentException(
+                $"no record for side {binding.Side}, type 0x{binding.ContextType:X2}, " +
+                $"gesture 0x{binding.Gesture:X2} was read from the earbuds",
+                nameof(binding));
+        }
+
+        return [0x01, (byte)binding.Side, binding.ContextType, binding.Gesture, action];
+    }
+
+    /// <summary>
+    /// True when <paramref name="after"/> is <paramref name="before"/> with exactly one byte
+    /// different: <paramref name="binding"/>'s action, now <paramref name="action"/>.
+    /// </summary>
+    /// <remarks>
+    /// Compared on the raw bytes, not the model, so a change to a field this decoder does
+    /// not understand still counts as a change.
+    /// </remarks>
+    public static bool IsExactlyOneEdit(
+        TouchConfiguration before,
+        TouchConfiguration after,
+        TouchBinding binding,
         byte action)
     {
-        var raw = original.RawPayload.ToArray();
+        var expected = before.RawPayload.ToArray();
+        var edited = false;
 
-        for (var offset = 2; offset + RecordWidth <= raw.Length; offset += RecordWidth)
+        for (var offset = 2; offset + RecordWidth <= expected.Length; offset += RecordWidth)
         {
-            if (raw[offset] == (byte)side && raw[offset + 1] == contextType && raw[offset + 2] == gesture)
+            if (expected[offset] == (byte)binding.Side
+                && expected[offset + 1] == binding.ContextType
+                && expected[offset + 2] == binding.Gesture)
             {
-                raw[offset + 3] = action;
-                return raw;
+                expected[offset + 3] = action;
+                edited = true;
+                break;
             }
         }
 
-        throw new ArgumentException(
-            $"no record for side {side}, type 0x{contextType:X2}, gesture 0x{gesture:X2}",
-            nameof(gesture));
+        return edited && after.RawPayload.Span.SequenceEqual(expected);
     }
 }

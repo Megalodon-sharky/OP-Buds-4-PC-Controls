@@ -19,16 +19,20 @@ over Bluetooth Classic RFCOMM. No phone involved.
 | **Battery** | Left, right and case, live, with charging state |
 | **Noise control** | Off · Transparency · Adaptive · Noise cancellation (auto / low / moderate / high) — set from the window or the tray menu |
 | **Equaliser** | Balanced · Serenade · Bass · saved custom profile |
+| **BassWave** | Level slider, −5 to +5 — the range is read from the earbuds, not hardcoded |
+| **Touch gestures** | Double press, triple press and press-and-hold, per bud: play/pause, previous, next, voice assistant, noise control, or nothing |
 | **Find my earbuds** | Per bud or both |
 | **Wear state** | In ear / out / in case, per bud |
 | **Device info** | Firmware, MAC, connected peers |
 | **Tray** | Battery percentage drawn into the icon, ANC menu, close-to-tray, start with Windows |
 | **Developer page** | Live annotated hex of every frame, raw frame sender, export as JSONL |
 
-**Read-only for now:** touch-gesture remapping, misc feature switches, BassWave level and
-custom EQ bands. Their setter command ids are still inherited Buds Pro 3 guesses and have
-never been transmitted to this hardware. They are shown with a note rather than as dead
-controls. See [Safety](#safety).
+Every write is confirmed by reading the setting back. A gesture change goes further: the
+whole gesture table is read back and must match the old one with exactly one byte different.
+
+**Read-only for now:** the misc feature switches (including BassWave's own on/off) and
+custom EQ bands. Their write formats have not been verified on this hardware, so they are
+shown with a note rather than as dead controls. See [Safety](#safety).
 
 **Not supported, and won't be:**
 
@@ -134,7 +138,7 @@ src\OpBuds.Protocol   framing, codecs, device profiles   (net8.0, no Windows dep
 src\OpBuds.Core       transport, session, supervisor, battery poller
 src\OpBuds.Cli        opbuds.exe
 src\OpBuds.App        the WPF tray app
-tests\                102 tests, none need hardware
+tests\                111 tests, none need hardware
 tools\probe\          the Python research harness that mapped the protocol
 docs\protocol.md      the wire format and every measured constant
 captures\             JSONL captures (gitignored — they contain MACs)
@@ -173,7 +177,11 @@ code, not just documented, and they are why nothing here has ever bricked a unit
   firmware-update entry point.
 - A **full read-only snapshot** is taken before the first write of a session and restored in
   a `finally` block, including on Ctrl+C.
-- Touch configuration is written back **verbatim from the bytes read**, never reconstructed.
+- Touch configuration is **never rebuilt from a model**. A change sends one record copied
+  from the bytes read with only its action replaced, then the whole table is read back and
+  compared byte for byte.
+- Every new setter is proven first by the Python probe: a snapshot, one small change, a read
+  of every command id to catch side effects, and an automatic restore.
 - Anything whose opcode is still a guess stays **read-only** until it has been confirmed on
   hardware.
 

@@ -47,10 +47,38 @@ public static class EqPresetCodec
     }
 }
 
-/// <summary>BassWave, <c>0x0124</c>. Payload is <c>[status][min][max][current]</c>, signed.</summary>
+/// <summary>
+/// BassWave: read <c>0x0124</c> as <c>[status][min][max][current]</c>, write <c>0x041B</c>
+/// as <c>[min][max][level]</c>. All signed.
+/// </summary>
 public static class BassWaveCodec
 {
     public static byte[] BuildRequest() => [];
+
+    /// <summary>Builds the <c>0x041B</c> payload for <paramref name="level"/>.</summary>
+    /// <remarks>
+    /// The getter's reply minus its status byte — the rule every confirmed setter on this
+    /// hardware follows — and byte for byte the body of the <c>0x0508</c> push. The bounds
+    /// are echoed from the device's own reading rather than hardcoded, and a level outside
+    /// them is refused here: what the firmware does with one is unknown.
+    /// </remarks>
+    public static byte[] BuildSet(BassWaveState bounds, int level)
+    {
+        if (level < bounds.Minimum || level > bounds.Maximum)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(level),
+                level,
+                $"the earbuds report a range of {bounds.Minimum} to {bounds.Maximum}");
+        }
+
+        return
+        [
+            unchecked((byte)bounds.Minimum),
+            unchecked((byte)bounds.Maximum),
+            unchecked((byte)level),
+        ];
+    }
 
     public static bool TryParse(ReadOnlyMemory<byte> payload, out BassWaveState state)
     {

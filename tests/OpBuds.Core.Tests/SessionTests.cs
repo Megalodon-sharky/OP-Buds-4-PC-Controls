@@ -1,5 +1,6 @@
 using OpBuds.Core.Session;
 using OpBuds.Core.Transport;
+using OpBuds.Protocol.Codecs;
 using OpBuds.Protocol.Commands;
 using OpBuds.Protocol.Framing;
 using OpBuds.Protocol.Model;
@@ -222,6 +223,62 @@ public class BudsClientTests
         await Should.ThrowAsync<ArgumentOutOfRangeException>(async () =>
             await client.SetAncAsync((AncMode)0x1000));
     }
+
+    [Fact]
+    public async Task SetsBassWaveWithTheDeviceBoundsAndReportsTheReadback()
+    {
+        var transport = new ScriptedTransport()
+            .Respond(MessageTypes.Set, OpCommands.BassWaveSet, MessageTypes.SetAck, [0x00])
+            .Respond(MessageTypes.Request, OpCommands.BassWaveGet, MessageTypes.Reply, [0x00, 0xFB, 0x05, 0x04]);
+
+        await using var session = new BudsSession(transport, Buds4Profile.Instance);
+        await session.StartAsync(CancellationToken.None);
+
+        var readback = await new BudsClient(session).SetBassWaveAsync(new BassWaveState(-5, 5, 5), 4);
+
+        readback.ShouldBe(new BassWaveState(-5, 5, 4));
+        SentPayload(transport, MessageTypes.Set, OpCommands.BassWaveSet).ShouldBe(new byte[] { 0xFB, 0x05, 0x04 });
+    }
+
+    [Fact]
+    public async Task ReportsNothingWhenTheDeviceRejectsABassWaveLevel()
+    {
+        var transport = new ScriptedTransport()
+            .Respond(MessageTypes.Set, OpCommands.BassWaveSet, MessageTypes.SetAck, [0x01]);
+
+        await using var session = new BudsSession(transport, Buds4Profile.Instance);
+        await session.StartAsync(CancellationToken.None);
+
+        (await new BudsClient(session).SetBassWaveAsync(new BassWaveState(-5, 5, 5), 4)).ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task SetsOneTouchRecordAndReturnsTheWholeTableReadBack()
+    {
+        TouchCodec.TryParse(new byte[] { 0x00, 0x02, 0x01, 0x01, 0x02, 0x05, 0x02, 0x01, 0x02, 0x06 }, out var before)
+            .ShouldBeTrue();
+
+        var transport = new ScriptedTransport()
+            .Respond(MessageTypes.Set, OpCommands.TouchConfigSet, MessageTypes.SetAck, [0x00])
+            .Respond(MessageTypes.Request, OpCommands.TouchConfigGet, MessageTypes.Reply,
+                [0x00, 0x02, 0x01, 0x01, 0x02, 0x05, 0x02, 0x01, 0x02, 0x05]);
+
+        await using var session = new BudsSession(transport, Buds4Profile.Instance);
+        await session.StartAsync(CancellationToken.None);
+
+        var after = await new BudsClient(session).SetTouchActionAsync(before, before.Bindings[1], 0x05);
+
+        after.ShouldNotBeNull();
+        TouchCodec.IsExactlyOneEdit(before, after, before.Bindings[1], 0x05).ShouldBeTrue();
+        SentPayload(transport, MessageTypes.Set, OpCommands.TouchConfigSet)
+            .ShouldBe(new byte[] { 0x01, 0x02, 0x01, 0x02, 0x05 });
+    }
+
+    private static byte[] SentPayload(ScriptedTransport transport, byte messageType, byte commandId) =>
+        transport.Sent
+            .Select(data => FrameCodec.TryDecode(data, out var frame, out _) == DecodeStatus.Ok ? frame : (OpFrame?)null)
+            .Single(frame => frame is { } f && f.MessageType == messageType && f.CommandId == commandId)!
+            .Value.Payload.ToArray();
 
     [Fact]
     public async Task PagesTheMiscReadSoNoIdIsSilentlyLost()

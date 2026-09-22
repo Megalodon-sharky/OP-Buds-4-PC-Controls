@@ -98,6 +98,26 @@ public class SoundCodecTests
     }
 
     [Fact]
+    public void BassWaveSetEchoesTheDeviceBoundsThenTheLevel()
+    {
+        // The getter's reply minus its status byte, the rule every confirmed setter follows.
+        BassWaveCodec.TryParse(Fixtures.BassWave, out var state).ShouldBeTrue();
+
+        BassWaveCodec.BuildSet(state, 4).ShouldBe(Fixtures.Hex("fb 05 04"));
+        BassWaveCodec.BuildSet(state, 0).ShouldBe(Fixtures.Hex("fb 05 00"));
+        BassWaveCodec.BuildSet(state, -2).ShouldBe(Fixtures.Hex("fb 05 fe"));
+    }
+
+    [Theory]
+    [InlineData(6)]
+    [InlineData(-6)]
+    public void BassWaveSetRefusesALevelOutsideTheReportedRange(int level)
+    {
+        BassWaveCodec.TryParse(Fixtures.BassWave, out var state).ShouldBeTrue();
+        Should.Throw<ArgumentOutOfRangeException>(() => BassWaveCodec.BuildSet(state, level));
+    }
+
+    [Fact]
     public void ParsesEmptyCustomEqList()
     {
         CustomEqCodec.TryParse(Fixtures.CustomEqEmpty, out var profiles).ShouldBeTrue();
@@ -207,26 +227,50 @@ public class TouchCodecTests
     }
 
     [Fact]
-    public void WriteBackChangesExactlyOneByte()
+    public void SetIsOneReadRecordBehindACount()
     {
-        // Touch config is replayed verbatim, never reconstructed: rebuilding it from the
-        // model would normalise any field this decoder does not yet understand.
+        // Right double press, re-pointed from next (06) to previous (05). Side, context and
+        // gesture are copied from what was read; only the action is new.
         TouchCodec.TryParse(Fixtures.TouchConfig, out var configuration).ShouldBeTrue();
 
-        var updated = TouchCodec.BuildSetFrom(configuration, BudSide.Right, 0x01, 0x02, 0x09);
-
-        updated.Length.ShouldBe(Fixtures.TouchConfig.Length);
-        var differences = updated.Where((b, i) => b != Fixtures.TouchConfig[i]).Count();
-        differences.ShouldBe(1);
-        updated[9].ShouldBe((byte)0x09);
+        TouchCodec.BuildSet(configuration, configuration.Bindings[1], 0x05)
+            .ShouldBe(Fixtures.Hex("01 02 01 02 05"));
     }
 
     [Fact]
     public void RefusesToInventARecord()
     {
         TouchCodec.TryParse(Fixtures.TouchConfig, out var configuration).ShouldBeTrue();
-        Should.Throw<ArgumentException>(
-            () => TouchCodec.BuildSetFrom(configuration, BudSide.Left, 0x09, 0x09, 0x01));
+        Should.Throw<ArgumentException>(() => TouchCodec.BuildSet(
+            configuration, new TouchBinding(BudSide.Left, 0x09, 0x09, 0x01), 0x01));
+    }
+
+    [Fact]
+    public void AcceptsAReadBackDifferingInExactlyTheEditedByte()
+    {
+        TouchCodec.TryParse(Fixtures.TouchConfig, out var before).ShouldBeTrue();
+        TouchCodec.TryParse(Fixtures.Hex("00 03 01 01 02 05 02 01 02 05 01 06 02 1d"), out var after)
+            .ShouldBeTrue();
+
+        TouchCodec.IsExactlyOneEdit(before, after, before.Bindings[1], 0x05).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void RejectsAReadBackWhereAnotherGestureAlsoMoved()
+    {
+        // The edit landed, but the call-context record changed too.
+        TouchCodec.TryParse(Fixtures.TouchConfig, out var before).ShouldBeTrue();
+        TouchCodec.TryParse(Fixtures.Hex("00 03 01 01 02 05 02 01 02 05 01 06 02 00"), out var after)
+            .ShouldBeTrue();
+
+        TouchCodec.IsExactlyOneEdit(before, after, before.Bindings[1], 0x05).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void RejectsAReadBackWhereTheEditDidNotLand()
+    {
+        TouchCodec.TryParse(Fixtures.TouchConfig, out var before).ShouldBeTrue();
+        TouchCodec.IsExactlyOneEdit(before, before, before.Bindings[1], 0x05).ShouldBeFalse();
     }
 }
 

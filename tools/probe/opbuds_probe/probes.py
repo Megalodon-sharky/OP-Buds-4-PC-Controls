@@ -275,7 +275,237 @@ def tier_c_eq(session: Session, log: ProtocolLog) -> dict:
     return observed
 
 
-TIERS = {"A": tier_a_find_device, "B": tier_b_anc, "C": tier_c_eq}
+# --- Tier D: BassWave level and touch config --------------------------------
+# First transmissions of both setters. Neither payload is a guess: independent
+# lines of evidence agree on each before a byte is sent.
+#
+# * On this hardware every confirmed setter takes its getter's reply minus the
+#   status byte: 0x0406 sends [preset] for 0x010F's [status][preset], and 0x0404
+#   sends [count][id][lo][hi] for 0x010C's [status][count][id][lo][hi].
+# * BassWave: the Buds Pro 3 sends 0x041B as [min][max][level] -- 0x0124's reply
+#   minus status, and byte for byte the body of the 0x0508 push.
+# * Touch: Gadgetbridge's Oppo encoding is [count=1][side], a 16-bit gesture code,
+#   then an action. Its codes (0x0201 = double tap) are little-endian
+#   [type 01][gesture 02], so the payload is one 0x0108 record behind a count --
+#   the same shape as ANC.
+#
+# Each tier still tries at most two shapes, verifies by readback rather than by
+# ack (an ack proves parsing, not effect), diffs every readable command to catch
+# collateral changes, and restores from the bytes it read, never a rebuilt model.
+
+def _signed(b: int) -> int:
+    return b - 0x100 if b & 0x80 else b
+
+
+def _ack_text(ack: Frame | None) -> str:
+    return "timeout" if ack is None else ("ok" if ack.ok else f"status 0x{ack.status:02X}")
+
+
+def _collateral(before: dict, after: dict, expected: str) -> list[dict]:
+    """Show everything that changed; single out anything other than ``expected``."""
+    changes = diff_snapshots(before, after)
+    render_diff(changes)
+    stray = [c for c in changes if c["command"] != expected]
+    if stray:
+        print(f"\n  {len(stray)} command(s) besides {expected} changed -- review above.")
+        print("  Battery drifting by a percent is normal; anything else is not.")
+    else:
+        print(f"\n  Collateral check: only {expected} changed.")
+    return stray
+
+
+def tier_d_basswave(session: Session, log: ProtocolLog) -> dict:
+    """First transmission of 0x041B, the BassWave level setter.
+
+    Moves the level ONE step and puts it back. An adjacent value is the smallest
+    audible change available, and one the device already reports as inside its
+    own range. Min and max are replayed verbatim from the reply, never assumed.
+    """
+    print("\n  Tier BASS -- BassWave level (one audible step, restored)")
+    print("  " + "-" * 62)
+    original = session.request(known.BASSWAVE_VALUE_GET)
+    if original is None or len(original.payload) < 4 or original.payload[0] != 0x00:
+        print("  cannot read BassWave -- aborting rather than writing blind.")
+        return {"error": "no baseline"}
+    baseline = original.payload
+    _, lo, hi, cur = baseline[:4]
+    lo_s, hi_s, cur_s = _signed(lo), _signed(hi), _signed(cur)
+    target_s = cur_s - 1 if cur_s > lo_s else cur_s + 1
+    target = target_s & 0xFF
+    print(f"  baseline: {baseline.hex(' ')}  (min {lo_s:+d}, max {hi_s:+d}, level {cur_s:+d})")
+    feature = session.request(known.MISC_CONFIG_GET, bytes((0x01, known.BASSWAVE_FEATURE_ID)))
+    print(f"  feature 0x1D (BassWave switch): {feature.payload.hex(' ') if feature else 'timeout'}")
+    print(f"  target: level {target_s:+d}")
+
+    shapes = {
+        "min-max-level": lambda level: bytes((lo, hi, level)),
+        "level-only": lambda level: bytes((level,)),
+    }
+    print("\n  Reading every command id first, for the collateral diff...")
+    before = read_all(session)
+    worked: str | None = None
+    observed: dict = {"baseline": baseline.hex()}
+    try:
+        for label, build in shapes.items():
+            session.notifications.clear()
+            payload = build(target)
+            ack = session.send_set(known.BASSWAVE_LEVEL_SET, payload)
+            time.sleep(1.0)
+            readback = session.request(known.BASSWAVE_VALUE_GET)
+            got = readback.payload if readback else None
+            pushes = [f.payload.hex(" ") for f in session.notifications
+                      if f.is_notification and f.cmd_id == 0x08]
+            entry = {"payload": payload.hex(), "ack": _ack_text(ack),
+                     "readback": got.hex() if got else "timeout", "push_0508": pushes}
+            observed[label] = entry
+            print(f"  {label:<14} tx {payload.hex(' '):<9} ack={entry['ack']:<12} "
+                  f"readback={entry['readback']}  push={pushes or '-'}")
+            log.probe("set", known.BASSWAVE_LEVEL_SET, entry["ack"], shape=label,
+                      payload=entry["payload"], readback=entry["readback"], pushes=pushes)
+            if got is not None and len(got) >= 4 and got[3] == target:
+                worked = label
+                break
+            if got is not None and got != baseline:
+                print("  *** the level moved, but not to the target -- stopping to restore. ***")
+                break
+            time.sleep(1.0)
+
+        if worked:
+            print(f"\n  CONFIRMED: '{worked}' moved the level {cur_s:+d} -> {target_s:+d}.")
+            print("  Re-reading every command id for collateral changes...")
+            after = read_all(session)
+            observed["stray"] = _collateral(before, after, f"0x{known.BASSWAVE_VALUE_GET:04X}")
+        else:
+            print("\n  Neither shape moved the level. Stopping here, as planned --")
+            print("  no further payloads are tried.")
+    finally:
+        observed["restored"] = _restore_basswave(session, baseline, shapes, worked)
+    return observed
+
+
+def _restore_basswave(session: Session, baseline: bytes, shapes: dict, worked: str | None) -> bool:
+    now = session.request(known.BASSWAVE_VALUE_GET)
+    if now is not None and now.payload == baseline:
+        print(f"  BassWave is at its baseline ({baseline.hex(' ')}) -- nothing to restore.")
+        return True
+    order = ([worked] if worked else []) + [s for s in shapes if s != worked]
+    for label in order:
+        session.send_set(known.BASSWAVE_LEVEL_SET, shapes[label](baseline[3]))
+        time.sleep(1.0)
+        now = session.request(known.BASSWAVE_VALUE_GET)
+        if now is not None and now.payload == baseline:
+            print(f"  restored with '{label}': {now.payload.hex(' ')} matches the baseline.")
+            return True
+    print(f"  *** COULD NOT RESTORE BassWave to {baseline.hex(' ')}. "
+          f"Set level {_signed(baseline[3]):+d} from the phone. ***")
+    return False
+
+
+def tier_d_touch(session: Session, log: ProtocolLog) -> dict:
+    """First transmission of 0x0401, the touch-config setter.
+
+    Changes exactly one record: the RIGHT bud's double tap takes the LEFT bud's
+    double-tap action -- a value this exact type and gesture already holds on this
+    unit, so nothing new is introduced. Then it is put back and the whole table is
+    compared byte for byte with what was read.
+    """
+    print("\n  Tier TOUCH -- touch config (silent; one record changed, restored)")
+    print("  " + "-" * 62)
+    original = session.request(known.TOUCH_CONFIG_GET)
+    raw = original.payload if original else b""
+    if len(raw) < 2 or raw[0] != 0x00 or len(raw) != 2 + 4 * raw[1]:
+        print(f"  unexpected 0x0108 reply {raw.hex(' ') or '(none)'} -- aborting.")
+        return {"error": "no baseline"}
+    count = raw[1]
+    records = [raw[2 + 4 * i: 6 + 4 * i] for i in range(count)]
+
+    def find(side: int, type_: int, gesture: int) -> int | None:
+        return next((i for i, r in enumerate(records)
+                     if r[0] == side and r[1] == type_ and r[2] == gesture), None)
+
+    ri, li = find(0x02, 0x01, 0x02), find(0x01, 0x01, 0x02)
+    if ri is None or li is None or records[ri][3] == records[li][3]:
+        print("  no right/left double-tap pair with differing actions -- the probe")
+        print("  target does not exist on this unit. Aborting rather than improvising.")
+        return {"error": "no target", "table": raw.hex()}
+
+    new_action = records[li][3]
+    record = bytes((0x02, 0x01, 0x02, new_action))
+    offset = 2 + 4 * ri + 3
+    expected = raw[:offset] + bytes((new_action,)) + raw[offset + 1:]
+    print(f"  table: {count} records; right double tap 0x{records[ri][3]:02X} -> 0x{new_action:02X}")
+
+    shapes = {
+        "count+record": b"\x01" + record,
+        "full-table": bytes((count,)) + expected[2:],
+    }
+    print("\n  Reading every command id first, for the collateral diff...")
+    before = read_all(session)
+    worked: str | None = None
+    observed: dict = {"baseline": raw.hex()}
+    try:
+        for label, payload in shapes.items():
+            ack = session.send_set(known.TOUCH_CONFIG_SET, payload)
+            time.sleep(1.0)
+            readback = session.request(known.TOUCH_CONFIG_GET)
+            got = readback.payload if readback else None
+            spots = ([i for i, (x, y) in enumerate(zip(raw, got)) if x != y]
+                     if got is not None and len(got) == len(raw) else None)
+            entry = {"payload": payload.hex(), "ack": _ack_text(ack),
+                     "readback": got.hex() if got else "timeout", "changed_bytes": spots}
+            observed[label] = entry
+            shown = payload.hex(" ") if len(payload) <= 8 else f"{payload[:8].hex(' ')} ...({len(payload)}B)"
+            print(f"  {label:<13} tx {shown}  ack={entry['ack']}  changed bytes={spots}")
+            log.probe("set", known.TOUCH_CONFIG_SET, entry["ack"], shape=label,
+                      payload=entry["payload"], readback=entry["readback"])
+            if got == expected:
+                worked = label
+                break
+            if got is not None and got != raw:
+                print("  *** the table changed, but not as intended -- stopping to restore. ***")
+                break
+            time.sleep(1.0)
+
+        if worked:
+            print(f"\n  CONFIRMED: '{worked}' changed exactly byte {offset} and nothing else.")
+            print("  Re-reading every command id for collateral changes...")
+            after = read_all(session)
+            observed["stray"] = _collateral(before, after, f"0x{known.TOUCH_CONFIG_GET:04X}")
+        else:
+            print("\n  Neither shape changed the table. Stopping here, as planned.")
+    finally:
+        observed["restored"] = _restore_touch(session, raw, records, worked)
+    return observed
+
+
+def _restore_touch(session: Session, raw: bytes, records: list[bytes], worked: str | None) -> bool:
+    """Write back the table exactly as read. Records are replayed, never rebuilt."""
+    now = session.request(known.TOUCH_CONFIG_GET)
+    if now is not None and now.payload == raw:
+        print("  touch table matches the baseline byte for byte -- nothing to restore.")
+        return True
+    attempts: list[tuple[str, list[bytes]]] = []
+    if worked != "full-table":
+        cur = now.payload if now is not None and len(now.payload) == len(raw) else None
+        stale = [i for i, rec in enumerate(records) if cur is None or cur[2 + 4 * i: 6 + 4 * i] != rec]
+        attempts.append(("count+record", [b"\x01" + records[i] for i in stale]))
+    attempts.append(("full-table", [bytes((len(records),)) + raw[2:]]))
+    for label, payloads in attempts:
+        for payload in payloads:
+            session.send_set(known.TOUCH_CONFIG_SET, payload)
+            time.sleep(0.6)
+        now = session.request(known.TOUCH_CONFIG_GET)
+        if now is not None and now.payload == raw:
+            print(f"  restored with '{label}': table matches the baseline byte for byte.")
+            return True
+    print("  *** COULD NOT RESTORE the touch table. Original bytes, for the record: ***")
+    print(f"  {raw.hex(' ')}")
+    print("  Reassign the gestures from the phone, or reset the earbuds.")
+    return False
+
+
+TIERS = {"A": tier_a_find_device, "B": tier_b_anc, "C": tier_c_eq,
+         "BASS": tier_d_basswave, "TOUCH": tier_d_touch}
 
 
 # --- differential scanning ------------------------------------------------

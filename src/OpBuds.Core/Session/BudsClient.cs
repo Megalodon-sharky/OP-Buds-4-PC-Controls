@@ -104,6 +104,53 @@ public sealed class BudsClient(BudsSession session)
         return reply is not null && BassWaveCodec.TryParse(reply.Value.Payload, out var state) ? state : null;
     }
 
+    /// <summary>Sets the BassWave level and confirms by reading it back.</summary>
+    /// <remarks>
+    /// <paramref name="bounds"/> is a reading from the device: its minimum and maximum are
+    /// echoed in the write and bound the level, so the range is always the device's own.
+    /// </remarks>
+    public async Task<BassWaveState?> SetBassWaveAsync(
+        BassWaveState bounds,
+        int level,
+        CancellationToken cancellationToken = default)
+    {
+        var ack = await session.SetAsync(OpCommands.BassWaveSet, BassWaveCodec.BuildSet(bounds, level), cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+
+        if (ack is null || !ack.Value.Ok)
+        {
+            return null;
+        }
+
+        await Task.Delay(300, cancellationToken).ConfigureAwait(false);
+        return await GetBassWaveAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Re-points one gesture and returns the whole table as read back afterwards.
+    /// </summary>
+    /// <remarks>
+    /// Returns the full table rather than a yes/no so the caller can check, byte for byte,
+    /// that the one record changed and nothing else did.
+    /// </remarks>
+    public async Task<TouchConfiguration?> SetTouchActionAsync(
+        TouchConfiguration current,
+        TouchBinding binding,
+        byte action,
+        CancellationToken cancellationToken = default)
+    {
+        var ack = await session.SetAsync(OpCommands.TouchConfigSet, TouchCodec.BuildSet(current, binding, action), cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+
+        if (ack is null || !ack.Value.Ok)
+        {
+            return null;
+        }
+
+        await Task.Delay(300, cancellationToken).ConfigureAwait(false);
+        return await GetTouchConfigAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<IReadOnlyList<CustomEqProfile>?> GetCustomEqAsync(CancellationToken cancellationToken = default)
     {
         var reply = await session.RequestAsync(OpCommands.CustomEqGet, CustomEqCodec.BuildRequest(), cancellationToken: cancellationToken)

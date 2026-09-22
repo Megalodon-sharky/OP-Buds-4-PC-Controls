@@ -6,6 +6,13 @@
     <ScrollViewer Padding="14,4,14,16" VerticalScrollBarVisibility="Auto">
         <StackPanel>
 
+            <ui:InfoBar Margin="0,0,0,12"
+                        IsClosable="False"
+                        IsOpen="{Binding Buds.LastError, Mode=OneWay, Converter={StaticResource HasValue}}"
+                        Message="{Binding Buds.LastError, Mode=OneWay}"
+                        Severity="Error"
+                        Title="Last error" />
+
             <TextBlock Style="{StaticResource SectionHeader}" Text="NOISE CONTROL" />
             <Border Style="{StaticResource Card}">
                 <StackPanel IsEnabled="{Binding Buds.IsConnected, Mode=OneWay}">
@@ -63,19 +70,43 @@
             </Border>
 
             <!--
-                BassWave and the custom profiles are read-only. Their setter command ids are
-                still inherited Buds Pro 3 guesses that have never been transmitted to this
-                hardware, and the 0x04xx space is not guessed at.
+                The range comes from the earbuds' own reading, never from a constant. Minimum
+                and Maximum sit before Value on purpose: a Slider coerces its value into its
+                current range, so the range has to exist first.
             -->
             <TextBlock Style="{StaticResource SectionHeader}" Text="BASSWAVE" />
             <Border Style="{StaticResource Card}">
                 <StackPanel>
-                    <TextBlock FontSize="20"
-                               FontWeight="SemiBold"
-                               Text="{Binding Buds.BassWave.Current, Mode=OneWay, StringFormat=Level {0}, FallbackValue=No reading}" />
-                    <TextBlock Margin="0,4,0,0"
+                    <Grid IsEnabled="{Binding CanSetBassWave, Mode=OneWay}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <Slider VerticalAlignment="Center"
+                                AutomationProperties.Name="BassWave level"
+                                IsSnapToTickEnabled="True"
+                                LargeChange="1"
+                                Minimum="{Binding BassWaveMinimum, Mode=OneWay}"
+                                Maximum="{Binding BassWaveMaximum, Mode=OneWay}"
+                                SmallChange="1"
+                                TickFrequency="1"
+                                TickPlacement="BottomRight"
+                                Value="{Binding BassWaveLevel, Mode=TwoWay}" />
+
+                        <TextBlock Grid.Column="1"
+                                   MinWidth="34"
+                                   Margin="12,0,0,0"
+                                   VerticalAlignment="Center"
+                                   FontSize="20"
+                                   FontWeight="SemiBold"
+                                   Text="{Binding BassWaveText, Mode=OneWay}"
+                                   TextAlignment="Right" />
+                    </Grid>
+
+                    <TextBlock Margin="0,6,0,0"
                                Style="{StaticResource Muted}"
-                               Text="Read-only for now — the level setter has never been sent to this hardware." />
+                               Text="{Binding BassWaveNote, Mode=OneWay}" />
                 </StackPanel>
             </Border>
 

@@ -35,6 +35,12 @@ public sealed record AncLevelOption(AncMode Mode, string Label);
 /// <summary>One selectable EQ preset.</summary>
 public sealed record EqOption(EqPreset Preset, string Label);
 
+/// <summary>One action a gesture can be pointed at.</summary>
+public sealed record TouchActionOption(byte Action, string Label);
+
+/// <summary>One gesture the Controls page lets you re-point.</summary>
+public sealed record GestureOption(byte Gesture, string Label);
+
 /// <summary>Shared option lists, so no two screens can drift apart.</summary>
 public static class DeviceOptions
 {
@@ -66,6 +72,39 @@ public static class DeviceOptions
         new(EqPreset.Serenade, "Serenade"),
         new(EqPreset.Bass, "Bass"),
         new(EqPreset.Custom, "Custom profile"),
+    ];
+
+    /// <summary>The touch context for ordinary playback. <c>0x06</c> appears to be calls.</summary>
+    public const byte PlaybackContext = 0x01;
+
+    /// <remarks>
+    /// Named from the Oppo-family gesture codes Gadgetbridge documents — <c>0x0201</c>,
+    /// <c>0x0301</c>, <c>0x0401</c>, little-endian <c>[context][gesture]</c> — which line up
+    /// with this unit's own table. The single press (<c>0x01</c>), gestures <c>0x05</c> and
+    /// <c>0x06</c>, and the call context are shown as read but not offered: what they mean
+    /// on this model is unconfirmed.
+    /// </remarks>
+    public static IReadOnlyList<GestureOption> EditableGestures { get; } =
+    [
+        new(0x02, "Double press"),
+        new(0x03, "Triple press"),
+        new(0x04, "Press and hold"),
+    ];
+
+    /// <remarks>
+    /// Only actions this unit already stores somewhere in its playback table, so a write can
+    /// never hand the firmware a value it has not shown it holds. Names are the Oppo-family
+    /// codes, and they match this unit's defaults: double press is previous on the left and
+    /// next on the right.
+    /// </remarks>
+    public static IReadOnlyList<TouchActionOption> TouchActions { get; } =
+    [
+        new(0x00, "Nothing"),
+        new(0x01, "Play / pause"),
+        new(0x05, "Previous track"),
+        new(0x06, "Next track"),
+        new(0x03, "Voice assistant"),
+        new(0x08, "Noise control"),
     ];
 
     public static bool IsLevel(AncMode mode) =>
@@ -201,36 +240,236 @@ public sealed partial class DashboardViewModel(BudsController buds, AncSelectorV
 }
 
 /// <summary>Noise control, EQ presets, BassWave and any saved custom profiles.</summary>
-public sealed partial class SoundViewModel(BudsController buds, AncSelectorViewModel anc) : ObservableObject
+public sealed partial class SoundViewModel : ObservableObject
 {
-    public BudsController Buds { get; } = buds;
+    /// <summary>How long the slider must sit still before its value is written.</summary>
+    private static readonly TimeSpan BassWaveSettle = TimeSpan.FromMilliseconds(400);
 
-    public AncSelectorViewModel Anc { get; } = anc;
+    private CancellationTokenSource? _bassWaveDebounce;
+
+    /// <summary>A level the user has chosen that the device has not yet confirmed.</summary>
+    private int? _pendingBassWave;
+
+    public SoundViewModel(BudsController buds, AncSelectorViewModel anc)
+    {
+        Buds = buds;
+        Anc = anc;
+
+        buds.PropertyChanged += (_, e) =>
+        {
+            switch (e.PropertyName)
+            {
+                case nameof(BudsController.BassWave):
+                    // Bounds before the level: a Slider coerces its value into its current
+                    // range, and a level arriving ahead of its range would be clamped.
+                    OnPropertyChanged(nameof(BassWaveMinimum));
+                    OnPropertyChanged(nameof(BassWaveMaximum));
+                    OnPropertyChanged(nameof(BassWaveLevel));
+                    OnPropertyChanged(nameof(BassWaveText));
+                    OnPropertyChanged(nameof(CanSetBassWave));
+                    break;
+                case nameof(BudsController.IsConnected):
+                    OnPropertyChanged(nameof(CanSetBassWave));
+                    break;
+                case nameof(BudsController.BassWaveSwitchOn):
+                    OnPropertyChanged(nameof(BassWaveNote));
+                    break;
+            }
+        };
+    }
+
+    public BudsController Buds { get; }
+
+    public AncSelectorViewModel Anc { get; }
 
     public IReadOnlyList<EqOption> EqOptions => DeviceOptions.Eq;
 
-    [RelayCommand]
-    private Task SetEqAsync(EqPreset preset) => Buds.SetEqPresetAsync(preset);
-}
+    public bool CanSetBassWave => Buds.IsConnected && Buds.BassWave is not null;
 
-/// <summary>Touch bindings and misc feature switches — read-only, deliberately.</summary>
-public sealed class ControlsViewModel(BudsController buds)
-{
-    public BudsController Buds { get; } = buds;
+    /// <summary>The device's own lower bound. Never hardcoded.</summary>
+    public double BassWaveMinimum => Buds.BassWave?.Minimum ?? 0;
+
+    /// <summary>The device's own upper bound. Never hardcoded.</summary>
+    public double BassWaveMaximum => Buds.BassWave?.Maximum ?? 0;
 
     /// <summary>
-    /// Why nothing on this page can be changed yet.
+    /// Two-way for the slider. A drag is written once, after the thumb settles — not once per
+    /// tick it passes on the way.
     /// </summary>
-    /// <remarks>
-    /// The setter command ids for touch, custom EQ and the misc switches are still inherited
-    /// Buds Pro 3 guesses that have never been transmitted to this hardware. The project rule
-    /// is that the <c>0x04xx</c> space is never fuzzed, because an unknown setter could be a
-    /// factory reset or DFU entry. So these read, and only read.
-    /// </remarks>
-    public string ReadOnlyReason =>
-        "Read-only. These setter command ids are still inherited from the Buds Pro 3 and " +
-        "have never been sent to this hardware — an unverified command in the 0x04xx space " +
-        "could be a factory reset, so it is not guessed at.";
+    public double BassWaveLevel
+    {
+        get => _pendingBassWave ?? Buds.BassWave?.Current ?? 0;
+        set
+        {
+            var level = (int)Math.Round(value);
+            if (!CanSetBassWave || Buds.BassWave is not { } current
+                || level == (_pendingBassWave ?? current.Current))
+            {
+                return;
+            }
+
+            _pendingBassWave = level;
+            OnPropertyChanged(nameof(BassWaveText));
+
+            _bassWaveDebounce?.Cancel();
+            _bassWaveDebounce?.Dispose();
+            _bassWaveDebounce = new CancellationTokenSource();
+            _ = CommitBassWaveAsync(level, _bassWaveDebounce.Token);
+        }
+    }
+
+    public string BassWaveText
+    {
+        get
+        {
+            var level = (int)BassWaveLevel;
+            return level > 0 ? $"+{level}" : level.ToString(CultureInfo.CurrentCulture);
+        }
+    }
+
+    public string BassWaveNote => Buds.BassWaveSwitchOn == false
+        ? "BassWave is switched off on the earbuds, so this level is stored but not heard until it is turned back on."
+        : "Written to the earbuds when the slider settles, then read back.";
+
+    [RelayCommand]
+    private Task SetEqAsync(EqPreset preset) => Buds.SetEqPresetAsync(preset);
+
+    private async Task CommitBassWaveAsync(int level, CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(BassWaveSettle, token);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        await Buds.SetBassWaveAsync(level);
+
+        // A newer drag superseded this one while it was on the wire: leave that one pending.
+        // Otherwise show what the device now reports, which is the truth even if it refused.
+        if (_pendingBassWave == level)
+        {
+            _pendingBassWave = null;
+            OnPropertyChanged(nameof(BassWaveLevel));
+            OnPropertyChanged(nameof(BassWaveText));
+        }
+    }
+}
+
+/// <summary>Touch gestures, and the misc feature switches (still read-only).</summary>
+public sealed partial class ControlsViewModel : ObservableObject
+{
+    public ControlsViewModel(BudsController buds)
+    {
+        Buds = buds;
+        Gestures = DeviceOptions.EditableGestures
+            .Select(gesture => new GestureRowViewModel(
+                gesture.Label,
+                new GestureSideViewModel(buds, BudSide.Left, gesture.Gesture),
+                new GestureSideViewModel(buds, BudSide.Right, gesture.Gesture)))
+            .ToArray();
+
+        buds.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(BudsController.TouchBindings) or nameof(BudsController.IsConnected))
+            {
+                foreach (var row in Gestures)
+                {
+                    row.Left.Refresh();
+                    row.Right.Refresh();
+                }
+
+                OnPropertyChanged(nameof(OtherBindings));
+            }
+        };
+    }
+
+    public BudsController Buds { get; }
+
+    public IReadOnlyList<GestureRowViewModel> Gestures { get; }
+
+    /// <summary>Every binding the matrix does not offer, shown exactly as read.</summary>
+    public IReadOnlyList<TouchBinding> OtherBindings => Buds.TouchBindings
+        .Where(binding => binding.ContextType != DeviceOptions.PlaybackContext
+                          || DeviceOptions.EditableGestures.All(g => g.Gesture != binding.Gesture))
+        .ToArray();
+}
+
+/// <summary>One gesture, with a dropdown for each earbud.</summary>
+public sealed class GestureRowViewModel(string label, GestureSideViewModel left, GestureSideViewModel right)
+{
+    public string Label { get; } = label;
+
+    public GestureSideViewModel Left { get; } = left;
+
+    public GestureSideViewModel Right { get; } = right;
+}
+
+/// <summary>One earbud's binding for one gesture: a dropdown that writes when changed.</summary>
+public sealed partial class GestureSideViewModel(BudsController buds, BudSide side, byte gesture) : ObservableObject
+{
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanEdit))]
+    private bool _isWriting;
+
+    /// <summary>The binding as last read from the earbuds, or null if there is none.</summary>
+    private TouchBinding? Binding => buds.TouchBindings
+        .Where(b => b.Side == side && b.ContextType == DeviceOptions.PlaybackContext && b.Gesture == gesture)
+        .Select(b => (TouchBinding?)b)
+        .FirstOrDefault();
+
+    public bool CanEdit => buds.IsConnected && Binding is not null && !IsWriting;
+
+    /// <summary>
+    /// The known actions, plus the current one if it is not among them — so an unexpected
+    /// value is shown as read instead of as a blank.
+    /// </summary>
+    public IReadOnlyList<TouchActionOption> Options =>
+        Binding is { } binding && DeviceOptions.TouchActions.All(option => option.Action != binding.Action)
+            ? [.. DeviceOptions.TouchActions, new(binding.Action, $"0x{binding.Action:X2} (as read)")]
+            : DeviceOptions.TouchActions;
+
+    public TouchActionOption? Selected
+    {
+        get => Binding is { } binding
+            ? Options.FirstOrDefault(option => option.Action == binding.Action)
+            : null;
+
+        set
+        {
+            if (value is null || IsWriting || Binding is not { } binding || value.Action == binding.Action)
+            {
+                return;
+            }
+
+            _ = WriteAsync(binding, value.Action);
+        }
+    }
+
+    public void Refresh()
+    {
+        OnPropertyChanged(nameof(Options));
+        OnPropertyChanged(nameof(Selected));
+        OnPropertyChanged(nameof(CanEdit));
+    }
+
+    private async Task WriteAsync(TouchBinding binding, byte action)
+    {
+        IsWriting = true;
+        try
+        {
+            await buds.SetTouchActionAsync(binding, action);
+        }
+        finally
+        {
+            IsWriting = false;
+
+            // Whatever the device now says wins, including when it refused the change.
+            Refresh();
+        }
+    }
 }
 
 /// <summary>Identity, firmware, peers, and what is deliberately absent.</summary>

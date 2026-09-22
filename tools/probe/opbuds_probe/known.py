@@ -34,6 +34,10 @@ CUSTOM_EQ_GET = 0x0122
 BASSWAVE_VALUE_GET = 0x0124
 
 # Sets (msg_type 0x04) -> acks (0x84)
+# Confirmed on the Buds 4: FIND_DEVICE, ANC, EQ_PRESET (Tiers A-C, 2026-09-10) and
+# TOUCH_CONFIG, BASSWAVE_LEVEL (tiers TOUCH and BASS, 2026-09-23). Each of the last two
+# changed exactly its own getter's reply and nothing else in the readable command space.
+# MISC_CONFIG and CUSTOM_EQ have still never been transmitted.
 FIND_DEVICE_SET = 0x0400
 TOUCH_CONFIG_SET = 0x0401
 MISC_CONFIG_SET = 0x0403
