@@ -67,8 +67,10 @@ launches straight to the tray.
 
 The exe is unsigned, so SmartScreen will warn once: **More info → Run anyway**.
 
-**First run:** open Settings and put your earbuds' Bluetooth address in. It defaults to the
-unit this was developed against, which is not yours.
+**First run:** open Settings and put your earbuds' Bluetooth address in — the app starts
+with a placeholder (`12:34:56:78:9A:BC`) and will not connect until you do. To find the
+address, run `python -m opbuds_probe devices` from `tools\probe`: it lists every paired
+device with its MAC.
 
 ---
 
@@ -231,3 +233,9 @@ from [`docs/protocol.md`](docs/protocol.md). Please keep it that way — see
 
 Not affiliated with OnePlus, Oppo or Google. OnePlus, HeyMelody, BassWave and Golden Sound
 are trademarks of their respective owners.
+
+---
+
+## Licence
+
+[MIT](LICENSE). Research sources and their licences are in [`NOTICE.md`](NOTICE.md).

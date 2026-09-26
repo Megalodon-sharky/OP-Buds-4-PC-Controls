@@ -12,7 +12,7 @@ namespace OpBuds.App.Services;
 /// </remarks>
 public sealed record AppSettings
 {
-    /// <summary>The paired earbuds. Defaults to the unit this project was developed against.</summary>
+    /// <summary>The paired earbuds. A placeholder until set from the Settings page.</summary>
     public string DeviceMac { get; init; } = "12:34:56:78:9A:BC";
 
     /// <summary>

@@ -2,6 +2,10 @@
 
 Living document. Every row carries a confidence rating.
 
+The Bluetooth addresses and device names of the development hardware are replaced with
+placeholders throughout (`12:34:56:78:9A:BC` for the earbuds, `11:22:33:44:55:66` for the
+phone, `0A:1B:2C:3D:4E:5F` / `DESKPC` for the PC). Every other byte is as measured.
+
 | Confidence | Meaning |
 |---|---|
 | `confirmed` | Observed working against a real OnePlus Buds 4 |
