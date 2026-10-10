@@ -208,6 +208,13 @@ restart.
 **Nothing in the notification area** — the icon is probably in the overflow. Click the `^`
 chevron and drag it out.
 
+**Doesn't start with Windows** — *Start with Windows* registers a Task Scheduler sign-in task
+named `OpBudsControls`, which starts the app in the tray about ten seconds after you sign in.
+It deliberately does not use the registry Run key: on the machine this was built on, Explorer
+skipped that entry at every sign-in with no visible reason. Because of that it won't show up
+in Task Manager's Startup tab — look in Task Scheduler instead. Turning the setting off and
+on again recreates the task.
+
 Settings and logs live in `%AppData%\OpBudsControls\`.
 
 ---
