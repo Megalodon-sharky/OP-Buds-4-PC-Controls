@@ -6,6 +6,7 @@ using System.Runtime.InteropServices;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Interop;
+using System.Windows.Threading;
 
 namespace OpBuds.App.Services;
 
@@ -50,10 +51,22 @@ public sealed class TrayIcon : IDisposable
 
     private const uint IconId = 1;
 
+    /// <summary>How many times, two seconds apart, a refused icon is offered again.</summary>
+    private const int RetryAttempts = 30;
+
+    /// <summary>
+    /// Broadcast by Explorer whenever it builds the taskbar: at sign-in, and after it
+    /// restarts. Every notification-area icon is gone at that point and must be added again.
+    /// </summary>
+    private static readonly int TaskbarCreatedMessage = RegisterWindowMessage("TaskbarCreated");
+
     private IntPtr _window;
     private IntPtr _icon;
     private HwndSource? _source;
     private HwndSourceHook? _hook;
+    private string _tooltip = string.Empty;
+    private DispatcherTimer? _retry;
+    private int _retriesLeft;
 
     public bool IsRegistered { get; private set; }
 
@@ -62,16 +75,29 @@ public sealed class TrayIcon : IDisposable
 
     public event EventHandler? LeftClick;
 
+    /// <summary>Raised each time the icon is added, including after a late or repeated add.</summary>
+    public event EventHandler? Registered;
+
     /// <summary>
-    /// Adds the icon. Returns false if the shell refused it.
+    /// Adds the icon. Returns false if the shell refused it — for now.
     /// </summary>
     /// <remarks>
-    /// The caller is expected to act on false rather than ignore it: an app that starts
-    /// hidden and has no tray icon has no user-reachable surface at all.
+    /// <para>
+    /// A refusal is usually timing, not a verdict. Started at sign-in, the app can be ready
+    /// before Explorer has built the notification area, and an icon offered then is simply
+    /// lost. So a refused icon is offered again every two seconds for a minute, and added
+    /// again whenever Explorer announces a new taskbar — which also covers Explorer
+    /// restarting later, an event that otherwise leaves a tray app running with no icon.
+    /// </para>
+    /// <para>
+    /// The caller still acts on false: an app that starts hidden needs some surface, and
+    /// <see cref="Registered"/> tells it when the icon has turned up after all.
+    /// </para>
     /// </remarks>
     public bool Register(IntPtr parentWindow, string tooltip)
     {
         _window = parentWindow;
+        _tooltip = tooltip;
         _source = HwndSource.FromHwnd(parentWindow);
 
         if (_source is null)
@@ -84,14 +110,20 @@ public sealed class TrayIcon : IDisposable
 
         _icon = LoadExecutableIcon();
 
-        var data = Describe(NifMessage | NifIcon | NifTip, tooltip);
-        IsRegistered = ShellNotifyIcon(NimAdd, ref data);
-        return IsRegistered;
+        if (TryAdd())
+        {
+            return true;
+        }
+
+        StartRetrying();
+        return false;
     }
 
-    /// <summary>Updates the hover text. Silently does nothing when not registered.</summary>
+    /// <summary>Updates the hover text, and remembers it for any later re-add.</summary>
     public void SetTooltip(string tooltip)
     {
+        _tooltip = tooltip;
+
         if (!IsRegistered)
         {
             return;
@@ -99,6 +131,42 @@ public sealed class TrayIcon : IDisposable
 
         var data = Describe(NifTip, tooltip);
         ShellNotifyIcon(NimModify, ref data);
+    }
+
+    private bool TryAdd()
+    {
+        var data = Describe(NifMessage | NifIcon | NifTip, _tooltip);
+        IsRegistered = ShellNotifyIcon(NimAdd, ref data);
+
+        if (IsRegistered)
+        {
+            StopRetrying();
+            Registered?.Invoke(this, EventArgs.Empty);
+        }
+
+        return IsRegistered;
+    }
+
+    private void StartRetrying()
+    {
+        StopRetrying();
+
+        _retriesLeft = RetryAttempts;
+        _retry = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+        _retry.Tick += (_, _) =>
+        {
+            if (TryAdd() || --_retriesLeft <= 0)
+            {
+                StopRetrying();
+            }
+        };
+        _retry.Start();
+    }
+
+    private void StopRetrying()
+    {
+        _retry?.Stop();
+        _retry = null;
     }
 
     /// <summary>
@@ -218,6 +286,23 @@ public sealed class TrayIcon : IDisposable
 
     private IntPtr WndProc(IntPtr window, int message, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
+        if (message == TaskbarCreatedMessage && TaskbarCreatedMessage != 0)
+        {
+            // A new taskbar normally has no icons in it, whatever this one believed before.
+            // The broadcast can also arrive with the old icon still in place (a DPI change
+            // does it), and an add would then fail as a duplicate — so remove, then add.
+            var stale = Describe(0, string.Empty);
+            ShellNotifyIcon(NimDelete, ref stale);
+
+            IsRegistered = false;
+            if (!TryAdd())
+            {
+                StartRetrying();
+            }
+
+            return IntPtr.Zero;
+        }
+
         if (message != TrayCallbackMessage)
         {
             return IntPtr.Zero;
@@ -257,6 +342,8 @@ public sealed class TrayIcon : IDisposable
 
     public void Dispose()
     {
+        StopRetrying();
+
         if (IsRegistered)
         {
             var data = Describe(0, string.Empty);
@@ -320,4 +407,7 @@ public sealed class TrayIcon : IDisposable
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool SetForegroundWindow(IntPtr window);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int RegisterWindowMessage(string message);
 }

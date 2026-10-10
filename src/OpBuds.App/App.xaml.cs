@@ -84,6 +84,11 @@ public partial class App : Application
         _host = builder.Build();
         _host.Start();
 
+        // Installs that turned autostart on through the Run key move onto the logon task.
+        // Explorer silently skipped that entry on the machine this was built on; see
+        // AutostartService for the evidence.
+        _host.Services.GetRequiredService<AutostartService>().MigrateFromRunKey();
+
         var window = _host.Services.GetRequiredService<MainWindow>();
         MainWindow = window;
 
@@ -107,12 +112,23 @@ public partial class App : Application
         _tray.ShowRequested += (_, _) => ShowMainWindow();
         _tray.ExitRequested += (_, _) => Shutdown();
 
-        // Never leave the user with no way to reach the app. If Windows refused the tray
-        // icon, "start minimised" would mean a running process with no visible surface and
-        // no way to quit it short of Task Manager.
+        // Never leave the user with no way to reach the app. With no tray icon, "start
+        // minimised" would mean a running process with no visible surface and no way to quit
+        // it short of Task Manager. But at sign-in a refused icon usually just means the
+        // taskbar does not exist yet, and the icon keeps being offered for a minute — so the
+        // window is the fallback only if that minute passes with no icon.
         if (startHidden && !_tray.IsRegistered)
         {
-            window.Show();
+            var fallback = new DispatcherTimer { Interval = TimeSpan.FromSeconds(60) };
+            fallback.Tick += (_, _) =>
+            {
+                fallback.Stop();
+                if (!_tray.IsRegistered)
+                {
+                    window.Show();
+                }
+            };
+            fallback.Start();
         }
     }
 

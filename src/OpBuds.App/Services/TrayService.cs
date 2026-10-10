@@ -35,21 +35,33 @@ public sealed class TrayService(
 
     public event EventHandler? ExitRequested;
 
-    /// <summary>False when Windows refused the icon. The app must then show a window.</summary>
+    /// <summary>
+    /// False while Windows has not accepted the icon. It keeps being offered for a minute,
+    /// so a false at start-up can still turn true — <see cref="Registered"/> says when.
+    /// </summary>
     public bool IsRegistered => _icon.IsRegistered;
+
+    /// <summary>Raised whenever the icon is added, including late or after Explorer restarts.</summary>
+    public event EventHandler? Registered;
 
     public void Attach(IntPtr parentHandle)
     {
         _icon.Menu = BuildMenu();
         _icon.LeftClick += (_, _) => ShowRequested?.Invoke(this, EventArgs.Empty);
 
-        if (!_icon.Register(parentHandle, buds.TrayTooltip))
+        // A re-added icon starts as the plain app icon, so it is repainted with the current
+        // battery and tooltip the moment it appears.
+        _icon.Registered += (_, _) =>
         {
-            return;
-        }
+            Refresh();
+            Registered?.Invoke(this, EventArgs.Empty);
+        };
 
+        // Subscribed whether or not the first add succeeds: a late icon still needs updates.
         buds.PropertyChanged += OnBudsPropertyChanged;
-        Refresh();
+
+        // Success paints the icon through Registered, above; failure keeps retrying.
+        _icon.Register(parentHandle, buds.TrayTooltip);
     }
 
     private ContextMenu BuildMenu()

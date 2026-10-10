@@ -27,7 +27,7 @@
                     <TextBlock Margin="0,0,0,8"
                                FontSize="13"
                                Style="{StaticResource Muted}"
-                               Text="Reads the registry Run entry directly, so it stays honest if you remove it from Task Manager." />
+                               Text="Uses a Task Scheduler sign-in task named OpBudsControls, so it won't appear in Task Manager's Startup list. The switch reads the task itself, so it stays accurate if the task is deleted or disabled." />
 
                     <ui:ToggleSwitch Margin="0,2"
                                      Content="Start minimised to the tray"
